@@ -1,5 +1,5 @@
 {
-  "name": "api",
+  "name": "@open-bias/api",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -10,7 +10,12 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@open-bias/common": "workspace:*",
     "@types/express": "^5.0.2",
     "express": "^5.1.0"
+  },
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir dist"
   }
 }
