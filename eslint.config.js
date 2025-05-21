@@ -4,34 +4,44 @@ import pluginVue from "eslint-plugin-vue";
 import { defineConfig } from "eslint/config";
 import tseslint from "@typescript-eslint/eslint-plugin";
 import eslintPluginImport from "eslint-plugin-import";
+import tsParser from "@typescript-eslint/parser";
 
 export default defineConfig([
-  js.configs.recommended, // <-- Direct inclusion, no "extends"
-  tseslint.configs.recommended,
-  pluginVue.configs["flat/essential"],
-
+  js.configs.recommended,
+  { files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"], languageOptions: { globals: globals.browser } },
   {
-    files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"],
-    plugins: {
-      "@typescript-eslint": tseslint,
-      vue: pluginVue,
-      import: eslintPluginImport
-    },
+    files: ["**/*.{ts,mts,cts}"],
     languageOptions: {
-      globals: globals.browser,
-      parser: tseslint.parser,
+      parser: tsParser,
       parserOptions: {
-        ecmaVersion: "latest",
-        sourceType: "module"
+        project: ["./tsconfig.json"],
+        tsconfigRootDir: "."
       }
     },
-    rules: {
-      "import/no-unresolved": "error"
+    plugins: {
+      "@typescript-eslint": tseslint
     },
-    settings: {
-      "import/resolver": {
-        typescript: {
-          project: "./tsconfig.json"
+    rules: tseslint.configs.recommended.rules
+  },
+  pluginVue.configs["flat/essential"],
+  { 
+    files: ["**/*.vue"], 
+    languageOptions: { 
+      parserOptions: { 
+        parser: tsParser,
+        project: ["./tsconfig.json"],
+        tsconfigRootDir: "."
+      } 
+    } 
+  },
+  { 
+    plugins: { 
+      import: eslintPluginImport 
+    }, 
+    settings: { 
+      "import/resolver": { 
+        typescript: { 
+          project: ["./tsconfig.json"]
         }
       }
     }
