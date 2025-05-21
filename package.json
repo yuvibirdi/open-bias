@@ -1,6 +1,5 @@
 {
     "name": "open-bias",
-    "module": "index.ts",
     "type": "module",
     "private": true,
     "devDependencies": {
@@ -10,10 +9,11 @@
         "@typescript-eslint/parser": "^8.32.1",
         "eslint": "^9.27.0",
         "eslint-config-prettier": "^10.1.5",
+        "eslint-import-resolver-typescript": "^4.3.5",
+        "eslint-plugin-import": "^2.31.0",
         "eslint-plugin-vue": "^10.1.0",
         "globals": "^16.1.0",
-        "prettier": "^3.5.3",
-        "typescript-eslint": "^8.32.1"
+        "prettier": "^3.5.3"
     },
     "peerDependencies": {
         "typescript": "^5"

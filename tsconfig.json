@@ -1,28 +1,36 @@
-{
-  "compilerOptions": {
-    // Environment setup & latest features
-    "lib": ["ESNext"],
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "allowJs": true,
+import js from "@eslint/js";
+import globals from "globals";
+import pluginVue from "eslint-plugin-vue";
+import { defineConfig } from "eslint/config";
+import tseslint from "@typescript-eslint/eslint-plugin";
+import eslintPluginImport from "eslint-plugin-import";
 
-    // Bundler mode
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-
-    // Best practices
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+export default defineConfig([
+  {
+    files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"],
+    plugins: {
+      "@typescript-eslint": tseslint,
+      vue: pluginVue,
+      import: eslintPluginImport
+    },
+    languageOptions: {
+      globals: globals.browser,
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module"
+      }
+    },
+    extends: [js.configs.recommended, tseslint.configs.recommended, pluginVue.configs["flat/essential"]],
+    rules: {
+      "import/no-unresolved": "error"
+    },
+    settings: {
+      "import/resolver": {
+        typescript: {
+          project: "./tsconfig.json"
+        }
+      }
+    }
   }
-}
+]);

@@ -1,5 +1,7 @@
 {
   "name": "@open-bias/common",
+  "version": "0.0.0",
+  "main": "./src/index.ts",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -10,6 +12,8 @@
     "typescript": "^5"
   },
   "scripts": {
-    "dev": "bunx tsc -w --pretty"
+    "dev": "bunx tsc -w --pretty",
+    "build": "bun build src/index.ts --outdir dist",
+    "lint":  "bunx eslint ."
   }
 }
