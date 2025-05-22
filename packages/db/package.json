@@ -14,6 +14,6 @@
     "dev": "bunx tsc -w --pretty",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "lint": "bunx eslint ./src/",
-    "migrate": "bunx drizzle-kit push:mysql --schema=./src/schema.ts"
+    "migrate": "bunx drizzle-kit push --dialect=mysql --schema=./src/schema.ts --url=\"mysql://root:openbias@127.0.0.1:3306/biasdb\""
   }
 }

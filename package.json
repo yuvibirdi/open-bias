@@ -32,7 +32,13 @@
         "db:stop": "docker compose -f infra/dev/docker-compose.yml down"
     },
     "dependencies": {
+        "@aws-sdk/client-comprehend": "^3.812.0",
+        "@open-bias/db": "workspace:*",
+        "@open-bias/enrich-worker": "./packages/enrich-worker",
+        "@open-bias/ingest-worker": "workspace:*",
+        "date-fns": "^4.1.0",
         "drizzle-orm": "^0.43.1",
-        "mysql2": "^3.14.1"
+        "mysql2": "^3.14.1",
+        "rss-parser": "^3.13.0"
     }
 }
