@@ -13,7 +13,7 @@
     },
 
     // Bundler mode
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
@@ -27,7 +27,9 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+    // esmodule for mysql2
+    "esModuleInterop": false
   },
-  "include": ["packages/*/src/**/*"]
+    "include": ["packages/*/src/**/*"],
 }

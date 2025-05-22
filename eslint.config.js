@@ -8,13 +8,14 @@ import tsParser from "@typescript-eslint/parser";
 
 export default defineConfig([
   js.configs.recommended,
-  { files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"], languageOptions: { globals: globals.browser } },
+  // Add Node.js globals for all files
+  { files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"], languageOptions: { globals: { ...globals.browser, ...globals.node } } },
   {
     files: ["**/*.{ts,mts,cts}"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: ["./tsconfig.json"],
+        project: ["./tsconfig.json", "./packages/*/tsconfig.json"],
         tsconfigRootDir: "."
       }
     },
@@ -24,24 +25,24 @@ export default defineConfig([
     rules: tseslint.configs.recommended.rules
   },
   pluginVue.configs["flat/essential"],
-  { 
-    files: ["**/*.vue"], 
-    languageOptions: { 
-      parserOptions: { 
+  {
+    files: ["**/*.vue"],
+    languageOptions: {
+      parserOptions: {
         parser: tsParser,
-        project: ["./tsconfig.json"],
+        project: ["./tsconfig.json", "./packages/*/tsconfig.json"],
         tsconfigRootDir: "."
-      } 
-    } 
+      }
+    }
   },
-  { 
-    plugins: { 
-      import: eslintPluginImport 
-    }, 
-    settings: { 
-      "import/resolver": { 
-        typescript: { 
-          project: ["./tsconfig.json"]
+  {
+    plugins: {
+      import: eslintPluginImport
+    },
+    settings: {
+      "import/resolver": {
+        typescript: {
+          project: ["./tsconfig.json", "./packages/*/tsconfig.json"],
         }
       }
     }

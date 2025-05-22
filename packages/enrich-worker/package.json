@@ -13,6 +13,6 @@
     "scripts": {
       "dev": "bunx tsc -w --pretty",
       "build": "bun build src/worker.ts --outdir dist",
-      "lint": "bunx eslint ."
+    "lint": "bunx eslint ./src/"
   }
 }

@@ -7,6 +7,7 @@
         "@types/bun": "^1.2.13",
         "@typescript-eslint/eslint-plugin": "^8.32.1",
         "@typescript-eslint/parser": "^8.32.1",
+        "drizzle-kit": "^0.31.1",
         "eslint": "^9.27.0",
         "eslint-config-prettier": "^10.1.5",
         "eslint-import-resolver-typescript": "^4.3.5",
@@ -27,5 +28,9 @@
         "dev": "bun --filter '*' dev",
         "dev:back": "bun --filter api --filter ingest-worker --filter enrich-worker --parallel dev",
         "lint": "bunx eslint \"**/*.{ts,tsx,vue}\""
+    },
+    "dependencies": {
+        "drizzle-orm": "^0.43.1",
+        "mysql2": "^3.14.1"
     }
 }

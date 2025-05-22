@@ -1,7 +1,7 @@
 {
-  "name": "@open-bias/ingest-worker",
-  "module": "index.ts",
+  "name": "@open-bias/db",
   "main": "./src/index.ts",
+  "module": "index.ts",
   "type": "module",
   "private": true,
   "devDependencies": {
@@ -12,7 +12,8 @@
   },
   "scripts": {
     "dev": "bunx tsc -w --pretty",
-    "build": "bun build src/worker.ts --outdir dist",
-    "lint": "bunx eslint ./src/"
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "lint": "bunx eslint ./src/",
+    "migrate": "bunx drizzle-kit push:mysql --schema=./src/schema.ts"
   }
 }

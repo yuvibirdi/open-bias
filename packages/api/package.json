@@ -16,7 +16,7 @@
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",
-    "build": "bun build src/index.ts --outdir dist",
-    "lint":  "bunx eslint ."
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "lint": "bunx eslint ./src/"
   }
 }
