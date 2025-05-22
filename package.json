@@ -27,7 +27,9 @@
     "scripts": {
         "dev": "bun --filter '*' dev",
         "dev:back": "bun --filter api --filter ingest-worker --filter enrich-worker --parallel dev",
-        "lint": "bunx eslint \"**/*.{ts,tsx,vue}\""
+        "lint": "bunx eslint \"**/*.{ts,tsx,vue}\"",
+        "db:start": "docker compose -f infra/dev/docker-compose.yml up -d",
+        "db:stop": "docker compose -f infra/dev/docker-compose.yml down"
     },
     "dependencies": {
         "drizzle-orm": "^0.43.1",

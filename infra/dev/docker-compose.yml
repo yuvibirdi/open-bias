@@ -1,0 +1,48 @@
+version: "3.9"
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: ob-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: openbias
+      MYSQL_DATABASE: biasdb
+    command: >
+      --default-authentication-plugin=caching_sha2_password
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports: ["3306:3306"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-popenbias"]
+      interval: 10s
+      retries: 5
+
+  redis:
+    image: redis:7.2.5
+    container_name: ob-redis
+    ports: ["6379:6379"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  elastic:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.1 
+    container_name: ob-elastic
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports: ["9200:9200"]
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-s", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=50s"]
+      interval: 15s
+      retries: 4
+
+volumes:
+  mysql_data:
+  redis_data:
+  es_data:
