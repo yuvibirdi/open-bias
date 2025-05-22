@@ -10,9 +10,9 @@
   "peerDependencies": {
     "typescript": "^5"
   },
-    "scripts": {
-      "dev": "bunx tsc -w --pretty",
-      "build": "bun build src/worker.ts --outdir dist",
+  "scripts": {
+    "dev": "bunx tsc -w --pretty",
+    "build": "bun build src/index.ts --outdir dist --target bun",
     "lint": "bunx eslint ./src/"
   }
 }

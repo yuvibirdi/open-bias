@@ -44,7 +44,11 @@ async function ingestOneFeed(src: (typeof sources.$inferSelect)) {
       title: item.title,
       link: item.link,
       summary: item.contentSnippet ?? null,
-      published: item.pubDate ? parseISO(item.pubDate) : new Date(),
+      published: (() => {
+        if (!item.pubDate) return new Date();
+        const d = parseISO(item.pubDate);
+        return isNaN(d.valueOf()) ? new Date() : d;
+      })(),
     });
 
     console.log(`+ [${src.name}] ${item.title}`);
