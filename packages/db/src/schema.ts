@@ -60,6 +60,8 @@ export const articles = mysqlTable(
     summary: text("summary"),
     published: datetime("published").notNull(),
     indexed: tinyint("indexed").default(0), // 0 = not in Elastic yet
+    imageUrl: text("image_url"),
+    bias: tinyint("bias").default(biasEnum.unknown),
   },
   (t) => ({
     idxSourceDate: index("idx_source_date").on(t.sourceId, t.published),

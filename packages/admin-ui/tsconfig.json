@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "preserve",          // Vue needs this
+    "types": ["vite/client"]    // keeps TS happy with import.meta
+  },
+  "include": ["src/**/*"],
+}
