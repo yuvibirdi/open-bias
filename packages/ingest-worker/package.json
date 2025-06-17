@@ -10,8 +10,13 @@
   "peerDependencies": {
     "typescript": "^5"
   },
+  "dependencies": {
+    "@open-bias/db": "workspace:*",
+    "rss-parser": "^3.13.0",
+    "date-fns": "^3.6.0"
+  },
   "scripts": {
-    "dev": "bunx tsc -w --pretty",
+    "dev": "bun --hot src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "lint": "bunx eslint ./src/"
   }

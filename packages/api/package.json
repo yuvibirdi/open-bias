@@ -12,7 +12,7 @@
   "dependencies": {
     "@open-bias/common": "workspace:*",
     "@types/express": "^5.0.2",
-    "express": "^5.1.0"
+    "hono": "^4.5.1"
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",

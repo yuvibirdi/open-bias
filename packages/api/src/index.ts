@@ -11,8 +11,8 @@ app.use("*", cors());
 
 const esNode = process.env.ELASTIC_URL;
 if (!esNode) {
-  console.error("ELASTIC_URL environment variable is not set.");
-  // Potentially throw an error or provide a default, depending on desired behavior
+  console.error("ELASTIC_URL environment variable is not set. Exiting.");
+  process.exit(1);
 }
 
 const es = new Client({
@@ -84,7 +84,7 @@ app.get("/articles", async (c) => {
       // from: offset, // Add for pagination
       query: esQueryBody,
       sort: [
-        { "published_date": { "order": "desc", "unmapped_type": "date" } } // Sort by published_date if available
+        { "published": { "order": "desc", "unmapped_type": "date" } } // Sort by published_date if available
       ]
     });
 
