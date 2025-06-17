@@ -68,7 +68,7 @@ Follow these steps to get the OpenBias application up and running on your local 
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repository-url>
+git clone https://www.github.com/yuvibirdi/open-bias
 cd open-bias
 ```
 
