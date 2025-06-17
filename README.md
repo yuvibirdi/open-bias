@@ -117,6 +117,9 @@ bun --filter @open-bias/db run seed
 You can run each service individually in separate terminal windows. This is useful for development as it provides isolated logs and hot-reloading.
 
 ```bash
+# Run everything at once
+bun --filter '*' run dev
+
 # Run the API server
 bun --filter @open-bias/api run dev
 
@@ -141,3 +144,9 @@ Here are some of the main scripts you can run from the project root:
 -   `bun --filter <package-name> run build`: Builds a specific package for production.
 -   `bun --filter @open-bias/db run migrate`: Applies the latest database schema changes.
 -   `bun --filter @open-bias/db run seed`: Seeds the database with the initial set of news sources.
+-   `bun --filter '*' run dev/build`: Starts all the dev/build scripts for all the packages.
+
+
+# NOTE:
+- It is possible sometimes that the `@open-bias/[package-name]` structuring doesn't not work. I am actively investigating this issue. The current fix is to instead use, `./packages/[package-name]`.
+- Therefore, `bun --filter @open-bias/admin-ui run dev` turns to `bun --filter ./packages/admin-ui run dev`
