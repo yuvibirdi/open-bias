@@ -1,0 +1,126 @@
+<template>
+  <CContainer fluid>
+    <CRow>
+      <CCol :xs="12">
+        <CCard class="mb-4">
+          <CCardHeader>
+            <strong>Articles Management</strong>
+          </CCardHeader>
+          <CCardBody>
+            <p>Manage articles from all sources</p>
+            
+            <!-- Articles Table -->
+            <CTable hover responsive>
+              <CTableHead>
+                <CTableRow>
+                  <CTableHeaderCell>Title</CTableHeaderCell>
+                  <CTableHeaderCell>Source</CTableHeaderCell>
+                  <CTableHeaderCell>Bias</CTableHeaderCell>
+                  <CTableHeaderCell>Published</CTableHeaderCell>
+                </CTableRow>
+              </CTableHead>
+              <CTableBody>
+                <CTableRow v-for="article in articles" :key="article.id">
+                  <CTableDataCell>
+                    <a :href="article.link" target="_blank" class="text-decoration-none">
+                      {{ article.title }}
+                    </a>
+                  </CTableDataCell>
+                  <CTableDataCell>{{ article.sourceName || 'Unknown' }}</CTableDataCell>
+                  <CTableDataCell>
+                    <CBadge :color="getBiasColor(article.bias)">
+                      {{ getBiasLabel(article.bias) }}
+                    </CBadge>
+                  </CTableDataCell>
+                  <CTableDataCell>{{ formatDate(article.published) }}</CTableDataCell>
+                </CTableRow>
+              </CTableBody>
+            </CTable>
+
+            <!-- Loading/Empty states -->
+            <div v-if="loading" class="text-center p-4">
+              <CSpinner />
+              <p class="mt-2">Loading articles...</p>
+            </div>
+            
+            <div v-else-if="articles.length === 0" class="text-center p-4">
+              <p>No articles found.</p>
+            </div>
+          </CCardBody>
+        </CCard>
+      </CCol>
+    </CRow>
+  </CContainer>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { getArticles } from '../composables/useApi'
+import type { Article } from '../composables/useApi'
+
+const articles = ref<Article[]>([])
+const loading = ref(false)
+const error = ref('')
+
+const getBiasColor = (bias: number): string => {
+  switch (bias) {
+    case 1: return 'primary'
+    case 2: return 'success'
+    case 3: return 'danger'
+    default: return 'secondary'
+  }
+}
+
+const getBiasLabel = (bias: number): string => {
+  switch (bias) {
+    case 1: return 'Left'
+    case 2: return 'Center'
+    case 3: return 'Right'
+    default: return 'Unknown'
+  }
+}
+
+const formatDate = (dateString: string): string => {
+  return new Date(dateString).toLocaleDateString()
+}
+
+const loadArticles = async () => {
+  loading.value = true
+  error.value = ''
+  try {
+    const response = await getArticles({ limit: 50 })
+    articles.value = response.articles || []
+    console.log('Loaded articles:', articles.value.length)
+  } catch (err) {
+    console.error('Failed to load articles:', err)
+    error.value = 'Failed to load articles from API'
+    // Fallback to mock data
+    articles.value = [
+      {
+        id: 1,
+        title: "Sample Article 1",
+        link: "https://example.com/article1",
+        summary: "Content preview...",
+        bias: 1,
+        published: "2024-01-15T10:30:00Z",
+        sourceName: "Sample News"
+      },
+      {
+        id: 2,
+        title: "Sample Article 2", 
+        link: "https://example.com/article2",
+        summary: "Content preview...",
+        bias: 2,
+        published: "2024-01-14T09:15:00Z",
+        sourceName: "Another News"
+      },
+    ]
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(async () => {
+  await loadArticles()
+})
+</script>

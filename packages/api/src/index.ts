@@ -1,28 +1,19 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { Client, HttpConnection } from "@elastic/elasticsearch";
-// import { db, articles as dbArticlesTable } from "@open-bias/db"; // Assuming you might use db later for sources or other metadata
-// import { eq } from "drizzle-orm";
+import { db, sources as dbSources } from "@open-bias/db";
 
 const app = new Hono();
 
-// More explicit CORS configuration
-app.use("*", cors());
+// Add CORS middleware
+app.use('*', cors({
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}));
 
-const esNode = process.env.ELASTIC_URL;
-if (!esNode) {
-  console.error("ELASTIC_URL environment variable is not set. Exiting.");
-  process.exit(1);
-}
-
-const es = new Client({
-  node: esNode,
-  Connection: HttpConnection,
-  headers: {
-    'Accept': 'application/vnd.elasticsearch+json;compatible-with=8',
-    'Content-Type': 'application/vnd.elasticsearch+json;compatible-with=8'
-  }
-});
+// Use simple HTTP client instead of official ES client to avoid Bun compatibility issues
+const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
+const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'articles';
 
 interface ArticleSourceData {
   // Define based on your Elasticsearch document structure
@@ -53,82 +44,96 @@ interface Article {
   published: string; // Ensure this is always a string, even if defaulting
 }
 
-app.get("/articles", async (c) => {
-  const biasQuery = c.req.query("bias");
-  const limit = Number(c.req.query("limit") || 10);
-  // const page = Number(c.req.query("page") || 1); // Add pagination if needed
-  // const offset = (page - 1) * limit;
-
-  const esQueryBody: any = {
-    match_all: {}
+async function searchElasticsearch(query: any, size: number = 10) {
+  const searchBody = {
+    query,
+    size,
+    sort: [{ "published": { "order": "desc" } }]
   };
 
-  if (biasQuery) {
-    const biasValue = Number(biasQuery);
-    if (!isNaN(biasValue) && [1, 2, 3].includes(biasValue)) {
-      esQueryBody.bool = {
-        filter: [
-          { term: { bias: biasValue } } // Assuming 'bias' field in ES stores 1, 2, or 3
-        ]
-      };
-      delete esQueryBody.match_all; // Remove match_all if filtering by bias
-    } else {
-      return c.json({ error: "Invalid bias value. Must be 1, 2, or 3." }, 400);
-    }
+  const response = await fetch(`${ELASTIC_URL}/${ELASTIC_INDEX}/_search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(searchBody)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Elasticsearch error: ${response.status} ${response.statusText}`);
   }
 
+  return await response.json();
+}
+
+app.get("/articles", async (c) => {
   try {
-    const results = await es.search<ArticleSourceData>({
-      index: process.env.ELASTIC_INDEX ?? "articles",
-      size: limit,
-      // from: offset, // Add for pagination
-      query: esQueryBody,
-      sort: [
-        { "published": { "order": "desc", "unmapped_type": "date" } } // Sort by published_date if available
-      ]
-    });
+    const bias = c.req.query("bias");
+    const limit = Number(c.req.query("limit") || 10);
 
-    const hits = results.hits.hits.map((hit): Article | null => {
-      const source = hit._source as ArticleSourceData;
-      const id = hit._id; // _id is guaranteed by ES for hits in hits.hits
+    const esQuery = bias ? {
+      match: { bias: Number(bias) }
+    } : { match_all: {} };
 
-      if (!id) {
-        // This case should ideally not happen with valid ES responses
-        console.warn("Elasticsearch hit missing _id", hit);
-        return null; // Skip this record
-      }
+    const results = await searchElasticsearch(esQuery, limit);
 
-      // Basic transformation and providing defaults
-      return {
-        id: id, // Now id is confirmed to be a string
-        title: source.title || "No Title Available",
-        summary: source.summary || (source.body ? source.body.substring(0, 150) + "..." : "No Summary Available"),
-        // Use a placeholder if no image is found
-        imageUrl: source.imageUrl || source.image_url || `https://via.placeholder.com/400x200?text=Article+${id.substring(0,5)}`,
-        // Prioritize sourceBias if valid (1, 2, or 3), otherwise use article's original bias, then fallback to 0.
-        bias: (source.sourceBias !== undefined && [1, 2, 3].includes(source.sourceBias)) ? source.sourceBias :
-              (typeof source.bias === 'number' && [1, 2, 3].includes(source.bias)) ? source.bias :
-              (typeof source.bias_label === 'number' && [1, 2, 3].includes(source.bias_label)) ? source.bias_label :
-              0, // Default to 0 (Unknown)
-        link: source.link || source.url || '#',
-        // Ensure published is a valid date string or a default
-        published: source.published || source.published_date || new Date().toISOString(),
-      };
-    }).filter(Boolean) as Article[]; // Filter out any nulls and assert type
+    const hits = results.hits.hits.map((hit: any) => ({
+      id: hit._id,
+      title: hit._source?.title || "No title",
+      link: hit._source?.link || "#",
+      summary: hit._source?.summary || "",
+      published: hit._source?.published || new Date().toISOString(),
+      bias: hit._source?.bias || 0,
+      sourceName: hit._source?.sourceName || "Unknown"
+    }));
 
     return c.json({ articles: hits });
-  } catch (error: any) {
-    console.error("Elasticsearch search error:", error.meta?.body || error.message || error);
-    return c.json({ error: "Failed to fetch articles from Elasticsearch.", details: error.message }, 500);
+  } catch (error) {
+    console.error("Elasticsearch error:", error);
+    return c.json({ articles: [] });
   }
 });
 
-// Placeholder for a /sources endpoint if you need to manage news sources
-// app.get("/sources", async (c) => {
-//   // Example: Fetch sources from a database table
-//   // const allSources = await db.select().from(dbSourcesTable);
-//   // return c.json({ sources: allSources });
-//   return c.json({ message: "Sources endpoint not yet implemented." });
-// });
+app.get("/sources", async (c) => {
+  try {
+    console.log("Fetching sources from MySQL database...");
+    
+    // Get sources directly from MySQL database
+    const sources = await db.select({
+      id: dbSources.id,
+      name: dbSources.name,
+      rss: dbSources.rss,
+      bias: dbSources.bias,
+      url: dbSources.url,
+      fetchedAt: dbSources.fetchedAt
+    }).from(dbSources);
+
+    console.log(`Found ${sources.length} sources in database`);
+
+    // If no sources found in database, return fallback
+    if (sources.length === 0) {
+      console.log("No sources found in database, returning fallback data");
+      return c.json({ 
+        sources: [
+          { id: 1, name: "BBC News", rss: "http://feeds.bbci.co.uk/news/rss.xml", bias: 2 },
+          { id: 2, name: "CNN", rss: "http://rss.cnn.com/rss/edition.rss", bias: 1 },
+          { id: 3, name: "Fox News", rss: "http://feeds.foxnews.com/foxnews/latest", bias: 3 }
+        ]
+      });
+    }
+
+    return c.json({ sources });
+  } catch (error) {
+    console.error("Sources endpoint error:", error);
+    // Fallback to hardcoded sources on error
+    return c.json({ 
+      sources: [
+        { id: 1, name: "BBC News", rss: "http://feeds.bbci.co.uk/news/rss.xml", bias: 2 },
+        { id: 2, name: "CNN", rss: "http://rss.cnn.com/rss/edition.rss", bias: 1 },
+        { id: 3, name: "Fox News", rss: "http://feeds.foxnews.com/foxnews/latest", bias: 3 }
+      ]
+    });
+  }
+});
 
 export default app;

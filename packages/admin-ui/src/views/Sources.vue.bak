@@ -1,0 +1,176 @@
+<template>
+  <CRow>
+    <CCol :xs="12">
+      <CCard class="mb-4">
+        <CCardHeader>
+          <strong>Sources Management</strong>
+          <CButton color="primary" class="float-end" @click="showAddModal = true">
+            Add New Source
+          </CButton>
+        </CCardHeader>
+        <CCardBody>
+          <div v-if="loading" class="text-center py-4">
+            <CSpinner />
+            <p class="mt-2">Loading sources...</p>
+          </div>
+          
+          <div v-else-if="error" class="alert alert-danger">
+            {{ error }}
+          </div>
+          
+          <CTable v-else hover responsive>
+            <CTableHead>
+              <CTableRow>
+                <CTableHeaderCell>Name</CTableHeaderCell>
+                <CTableHeaderCell>RSS Feed</CTableHeaderCell>
+                <CTableHeaderCell>Bias</CTableHeaderCell>
+                <CTableHeaderCell>Actions</CTableHeaderCell>
+              </CTableRow>
+            </CTableHead>
+            <CTableBody>
+              <CTableRow v-for="source in sources" :key="source.id">
+                <CTableDataCell>
+                  <strong>{{ source.name }}</strong>
+                </CTableDataCell>
+                <CTableDataCell>
+                  <a :href="source.rss" target="_blank" class="text-decoration-none">
+                    {{ source.rss }}
+                  </a>
+                </CTableDataCell>
+                <CTableDataCell>
+                  <CBadge :color="getBiasColor(source.bias)">
+                    {{ getBiasLabel(source.bias) }}
+                  </CBadge>
+                </CTableDataCell>
+                <CTableDataCell>
+                  <CButtonGroup>
+                    <CButton color="info" variant="outline" size="sm">
+                      Edit
+                    </CButton>
+                    <CButton color="danger" variant="outline" size="sm">
+                      Delete
+                    </CButton>
+                  </CButtonGroup>
+                </CTableDataCell>
+              </CTableRow>
+            </CTableBody>
+          </CTable>
+          
+          <div v-if="!loading && sources.length === 0" class="text-center py-4">
+            <p class="text-muted">No sources found.</p>
+          </div>
+        </CCardBody>
+      </CCard>
+    </CCol>
+  </CRow>
+
+  <!-- Add Source Modal -->
+  <CModal :visible="showAddModal" @close="showAddModal = false">
+    <CModalHeader>
+      <CModalTitle>Add New Source</CModalTitle>
+    </CModalHeader>
+    <CModalBody>
+      <CForm>
+        <CRow class="mb-3">
+          <CFormLabel for="sourceName" class="col-sm-2 col-form-label">Name</CFormLabel>
+          <CCol sm="10">
+            <CFormInput
+              id="sourceName"
+              v-model="newSource.name"
+              placeholder="Enter source name"
+            />
+          </CCol>
+        </CRow>
+        <CRow class="mb-3">
+          <CFormLabel for="sourceRss" class="col-sm-2 col-form-label">RSS URL</CFormLabel>
+          <CCol sm="10">
+            <CFormInput
+              id="sourceRss"
+              v-model="newSource.rss"
+              placeholder="Enter RSS feed URL"
+            />
+          </CCol>
+        </CRow>
+        <CRow class="mb-3">
+          <CFormLabel for="sourceBias" class="col-sm-2 col-form-label">Bias</CFormLabel>
+          <CCol sm="10">
+            <CFormSelect id="sourceBias" v-model="newSource.bias">
+              <option value="1">Left</option>
+              <option value="2">Center</option>
+              <option value="3">Right</option>
+            </CFormSelect>
+          </CCol>
+        </CRow>
+      </CForm>
+    </CModalBody>
+    <CModalFooter>
+      <CButton color="secondary" @click="showAddModal = false">
+        Cancel
+      </CButton>
+      <CButton color="primary" @click="addSource">
+        Add Source
+      </CButton>
+    </CModalFooter>
+  </CModal>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { getSources, type Source } from '@/composables/useApi'
+
+const sources = ref<Source[]>([])
+const loading = ref(true)
+const error = ref<string | null>(null)
+const showAddModal = ref(false)
+
+const newSource = ref({
+  name: '',
+  rss: '',
+  bias: 2,
+})
+
+const getBiasColor = (bias: number) => {
+  switch (bias) {
+    case 1: return 'primary'
+    case 2: return 'success'
+    case 3: return 'danger'
+    default: return 'secondary'
+  }
+}
+
+const getBiasLabel = (bias: number) => {
+  switch (bias) {
+    case 1: return 'Left'
+    case 2: return 'Center'
+    case 3: return 'Right'
+    default: return 'Unknown'
+  }
+}
+
+const loadSources = async () => {
+  loading.value = true
+  error.value = null
+  
+  try {
+    const response = await getSources()
+    sources.value = response.sources
+  } catch (err) {
+    error.value = (err as Error).message
+  } finally {
+    loading.value = false
+  }
+}
+
+const addSource = async () => {
+  // TODO: Implement API call to add source
+  console.log('Adding source:', newSource.value)
+  showAddModal.value = false
+  newSource.value = { name: '', rss: '', bias: 2 }
+  // Reload sources after adding
+  await loadSources()
+}
+
+onMounted(() => {
+  loadSources()
+})
+</script>

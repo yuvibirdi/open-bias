@@ -1,0 +1,152 @@
+<template>
+  <CRow>
+    <CCol :xs="12">
+      <CCard class="mb-4">
+        <CCardHeader>
+          <strong>OpenBias Dashboard</strong>
+        </CCardHeader>
+        <CCardBody>
+          <CRow>
+            <CCol :sm="6" :lg="3">
+              <CWidgetStatsA
+                class="mb-4"
+                color="primary"
+                :value="stats.totalArticles.toString()"
+                title="Total Articles"
+              >
+                <template #icon>
+                  <CIcon icon="cil-description" height="52" class="my-4 text-white" />
+                </template>
+              </CWidgetStatsA>
+            </CCol>
+            <CCol :sm="6" :lg="3">
+              <CWidgetStatsA
+                class="mb-4"
+                color="info"
+                :value="stats.totalSources.toString()"
+                title="Active Sources"
+              >
+                <template #icon>
+                  <CIcon icon="cil-rss" height="52" class="my-4 text-white" />
+                </template>
+              </CWidgetStatsA>
+            </CCol>
+            <CCol :sm="6" :lg="3">
+              <CWidgetStatsA
+                class="mb-4"
+                color="warning"
+                :value="stats.leftBias.toString()"
+                title="Left Bias Articles"
+              >
+                <template #icon>
+                  <CIcon icon="cil-chart-pie" height="52" class="my-4 text-white" />
+                </template>
+              </CWidgetStatsA>
+            </CCol>
+            <CCol :sm="6" :lg="3">
+              <CWidgetStatsA
+                class="mb-4"
+                color="danger"
+                :value="stats.rightBias.toString()"
+                title="Right Bias Articles"
+              >
+                <template #icon>
+                  <CIcon icon="cil-chart-line" height="52" class="my-4 text-white" />
+                </template>
+              </CWidgetStatsA>
+            </CCol>
+          </CRow>
+        </CCardBody>
+      </CCard>
+    </CCol>
+  </CRow>
+
+  <CRow>
+    <CCol :xs="12">
+      <CCard class="mb-4">
+        <CCardHeader>
+          <strong>Recent Articles</strong>
+        </CCardHeader>
+        <CCardBody>
+          <CTable hover responsive>
+            <CTableHead>
+              <CTableRow>
+                <CTableHeaderCell>Title</CTableHeaderCell>
+                <CTableHeaderCell>Source</CTableHeaderCell>
+                <CTableHeaderCell>Bias</CTableHeaderCell>
+                <CTableHeaderCell>Published</CTableHeaderCell>
+              </CTableRow>
+            </CTableHead>
+            <CTableBody>
+              <CTableRow v-for="article in recentArticles" :key="article.id">
+                <CTableDataCell>
+                  <a :href="article.link" target="_blank" class="text-decoration-none">
+                    {{ article.title }}
+                  </a>
+                </CTableDataCell>
+                <CTableDataCell>{{ article.sourceName }}</CTableDataCell>
+                <CTableDataCell>
+                  <CBadge :color="getBiasColor(article.bias)">
+                    {{ getBiasLabel(article.bias) }}
+                  </CBadge>
+                </CTableDataCell>
+                <CTableDataCell>{{ formatDate(article.published) }}</CTableDataCell>
+              </CTableRow>
+            </CTableBody>
+          </CTable>
+        </CCardBody>
+      </CCard>
+    </CCol>
+  </CRow>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { getArticles } from '../composables/useApi'
+import type { Article } from '../composables/useApi'
+
+const stats = ref({
+  totalArticles: 0,
+  totalSources: 0,
+  leftBias: 0,
+  rightBias: 0,
+})
+
+const recentArticles = ref<Article[]>([])
+
+const getBiasColor = (bias: number) => {
+  switch (bias) {
+    case 1: return 'primary'
+    case 2: return 'success'
+    case 3: return 'danger'
+    default: return 'secondary'
+  }
+}
+
+const getBiasLabel = (bias: number) => {
+  switch (bias) {
+    case 1: return 'Left'
+    case 2: return 'Center'
+    case 3: return 'Right'
+    default: return 'Unknown'
+  }
+}
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString()
+}
+
+onMounted(async () => {
+  try {
+    const { articles } = await getArticles({ limit: 10 })
+    recentArticles.value = articles
+    
+    // Calculate stats from recent articles (simplified)
+    stats.value.totalArticles = articles.length
+    stats.value.leftBias = articles.filter(a => a.bias === 1).length
+    stats.value.rightBias = articles.filter(a => a.bias === 3).length
+  } catch (error) {
+    console.error('Failed to load dashboard data:', error)
+  }
+})
+</script>

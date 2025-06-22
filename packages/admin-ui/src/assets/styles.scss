@@ -1,0 +1,40 @@
+// Import CoreUI styles
+@import '@coreui/coreui/scss/coreui';
+
+// Custom styles for OpenBias admin
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.main {
+  flex: 1;
+  padding: 1rem;
+}
+
+// Custom bias colors
+.bias-left {
+  background-color: #007bff;
+  color: white;
+}
+
+.bias-center {
+  background-color: #28a745;
+  color: white;
+}
+
+.bias-right {
+  background-color: #dc3545;
+  color: white;
+}
+
+.bias-unknown {
+  background-color: #6c757d;
+  color: white;
+}

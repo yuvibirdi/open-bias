@@ -5,55 +5,63 @@ const initialSources: Omit<InsertSource, 'id' | 'fetchedAt'>[] = [
   {
     name: 'Associated Press',
     url: 'https://apnews.com',
-    // IMPORTANT: Please find and use the official AP RSS feed.
-    // This is a placeholder as official feeds can be hard to pinpoint without visiting their site.
-    rss: 'https://rss.app/feeds/OZzM9hA6xL24VGW9.xml', 
+    rss: 'https://feeds.apnews.com/rss/apf-topnews',
     bias: biasEnum.center,
   },
   {
     name: 'Reuters',
     url: 'https://www.reuters.com',
-    rss: 'http://feeds.reuters.com/reuters/topNews',
+    rss: 'https://feeds.reuters.com/reuters/topNews',
     bias: biasEnum.center,
   },
   {
     name: 'BBC News',
     url: 'https://www.bbc.com/news',
-    rss: 'http://feeds.bbci.co.uk/news/world/rss.xml',
-    bias: biasEnum.center, // Example bias
+    rss: 'http://feeds.bbci.co.uk/news/rss.xml',
+    bias: biasEnum.center,
   },
   {
     name: 'NPR',
     url: 'https://www.npr.org',
     rss: 'https://feeds.npr.org/1001/rss.xml',
-    bias: biasEnum.left, // Example bias
+    bias: biasEnum.left,
   },
   {
     name: 'Al Jazeera English',
     url: 'https://www.aljazeera.com',
     rss: 'https://www.aljazeera.com/xml/rss/all.xml',
-    bias: biasEnum.center, // Example bias
+    bias: biasEnum.center,
   },
-  // Add more sources here
   {
-    name: 'new york times',
-    url: 'https://www.nytimes.com',
-    rss: 'https://rss.nytimes.com/services/xml/rss/nyt/homepage.xml', // verify this url
+    name: 'CNN',
+    url: 'https://www.cnn.com',
+    rss: 'http://rss.cnn.com/rss/edition.rss',
     bias: biasEnum.left,
   },
   {
-    name: 'wall street journal',
-    url: 'https://www.wsj.com',
-    rss: 'https://feeds.content.dowjones.io/public/rss/RSSWorldNews', // verify this url
+    name: 'Fox News',
+    url: 'https://www.foxnews.com',
+    rss: 'http://feeds.foxnews.com/foxnews/latest',
     bias: biasEnum.right,
   },
   {
-    name: 'fox news',
-    url: 'https://www.foxnews.com',
-    rss: 'https://moxie.foxnews.com/google-publisher/latest.xml', // verify this url
+    name: 'The Guardian',
+    url: 'https://www.theguardian.com',
+    rss: 'https://www.theguardian.com/world/rss',
+    bias: biasEnum.left,
+  },
+  {
+    name: 'Daily Wire',
+    url: 'https://www.dailywire.com',
+    rss: 'https://www.dailywire.com/feeds/rss.xml',
     bias: biasEnum.right,
   },
-  
+  {
+    name: 'Politico',
+    url: 'https://www.politico.com',
+    rss: 'https://www.politico.com/rss/politicopicks.xml',
+    bias: biasEnum.center,
+  }
 ];
 
 async function seedDatabase() {

@@ -1,31 +1,28 @@
 {
-  "name": "@open-bias/admin-ui",
-  "main": "./src/index.ts",
-  "module": "index.ts",
+  "name": "admin-ui",
   "private": true,
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
- },
+  },
+  "dependencies": {
+    "@coreui/coreui": "^5.4.0",
+    "@coreui/icons": "^3.0.1",
+    "@coreui/icons-vue": "^2.2.0",
+    "@coreui/vue": "^5.5.0",
+    "pinia": "^3.0.3",
+    "vue": "^3.5.13",
+    "vue-router": "^4.4.0"
+  },
   "devDependencies": {
-    "@tanstack/router-devtools": "^1.45.1",
-    "@tanstack/router-vite-plugin": "^1.45.1",
-    "@types/node": "^20.14.13",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@typescript-eslint/eslint-plugin": "^7.17.0",
-    "@typescript-eslint/parser": "^7.17.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.19",
-    "eslint": "^8.57.0",
-    "eslint-plugin-react-hooks": "^4.6.2",
-    "eslint-plugin-react-refresh": "^0.4.8",
-    "postcss": "^8.4.39",
-    "tailwindcss": "^3.4.6",
-    "typescript": "^5.2.2",
-    "vite": "^5.3.5"
+    "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/tsconfig": "^0.7.0",
+    "sass": "^1.77.6",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "vue-tsc": "^2.2.8"
   }
-} 
+}
