@@ -1,6 +1,8 @@
 import { Client, HttpConnection } from "@elastic/elasticsearch";
-import { db, articles, type Article as DbArticle, sources } from "@open-bias/db";
+import { db, articles, sources } from "@open-bias/db";
 import { eq, isNull, or, inArray } from "drizzle-orm";
+import { groupArticles } from "./grouper";
+import { analyzeArticleGroups } from "./analyzer";
 
 console.log("ELASTIC_URL:", process.env.ELASTIC_URL);
 const esNode = process.env.ELASTIC_URL;
@@ -20,6 +22,18 @@ const es = new Client({
 });
 
 async function main() {
+  // Step 1: Group similar articles
+  console.log("--- Starting Article Grouping ---");
+  await groupArticles();
+  console.log("--- Finished Article Grouping ---");
+
+  // Step 2: Analyze grouped articles for bias
+  console.log("--- Starting Bias Analysis ---");
+  await analyzeArticleGroups();
+  console.log("--- Finished Bias Analysis ---");
+
+  // Step 3: Index enriched articles into Elasticsearch
+  console.log("--- Starting Elasticsearch Indexing ---");
   const indexName = process.env.ELASTIC_INDEX ?? "articles";
   console.log("Checking if index exists:", indexName);
 
@@ -28,7 +42,7 @@ async function main() {
     console.log("Index exists:", indexExists);
 
     if (!indexExists) {
-      console.log("Creating index with mapping...");
+      console.log("Creating index with new mapping...");
       await es.indices.create({
         index: indexName,
         mappings: {
@@ -36,22 +50,28 @@ async function main() {
             title: { type: "text" },
             link: { type: "keyword" },
             summary: { type: "text" },
-            imageUrl: { type: "keyword" },
+            imageUrl: { type: "keyword", index: false },
             bias: { type: "integer" },
             published: { type: "date" },
             sourceId: { type: "integer" },
             sourceName: { type: "keyword" },
-            sourceBias: { type: "integer" }
+            sourceBias: { type: "integer" },
+            groupId: { type: "integer" },
+            // New mappings for analysis fields
+            politicalLeaning: { type: "float" },
+            sensationalism: { type: "float" },
+            framingSummary: { type: "text", index: false },
           }
         }
       });
-      console.log("Index created with mapping.");
+      console.log("Index created with new mapping.");
     }
   } catch (err: any) {
     console.error("Error checking or creating Elasticsearch index:", err.meta?.body || err.message || err);
     process.exit(1);
   }
 
+  // Select articles that haven't been indexed yet
   const batch = await db
     .select({
       id: articles.id,
@@ -59,11 +79,16 @@ async function main() {
       link: articles.link,
       summary: articles.summary,
       imageUrl: articles.imageUrl,
-      bias: articles.bias,
+      bias: articles.bias, // Original simple bias
       published: articles.published,
       sourceId: articles.sourceId,
       sourceName: sources.name,
-      sourceBias: sources.bias
+      sourceBias: sources.bias,
+      groupId: articles.groupId,
+      // New fields from analysis
+      politicalLeaning: articles.politicalLeaning,
+      sensationalism: articles.sensationalism,
+      framingSummary: articles.framingSummary,
     })
     .from(articles)
     .leftJoin(sources, eq(articles.sourceId, sources.id))
@@ -72,7 +97,6 @@ async function main() {
 
   if (batch.length === 0) {
     console.log("No new articles to index.");
-    process.exit(0);
     return;
   }
   console.log("Batch size for indexing:", batch.length);
@@ -93,43 +117,53 @@ async function main() {
         published: art.published ? new Date(art.published).toISOString() : new Date().toISOString(),
         sourceId: art.sourceId,
         sourceName: art.sourceName,
-        sourceBias: art.sourceBias
+        sourceBias: art.sourceBias,
+        groupId: art.groupId,
+        politicalLeaning: art.politicalLeaning ? parseFloat(art.politicalLeaning) : null,
+        sensationalism: art.sensationalism ? parseFloat(art.sensationalism) : null,
+        framingSummary: art.framingSummary
       }
     ];
   });
 
   try {
     if (operations.length > 0) {
-      const bulkResponse = await es.bulk<{ index: { error?: any, status?: number } }>({ refresh: true, operations });
+      const bulkResponse = await es.bulk<{ index: { error?: any, status?: number, _id: string } }>({ refresh: true, operations });
 
-      if (bulkResponse.errors) {
-        const erroredDocuments: any[] = [];
-        bulkResponse.items.forEach((item, i) => {
-          const actionType = Object.keys(item)[0] as 'index' | 'create' | 'update' | 'delete';
-          const result = item[actionType];
-          if (result && result.error) {
-            erroredDocuments.push({
-              status: result.status,
-              error: result.error,
-              document: operations[i * 2 + 1]
-            });
+      const successfulIds: number[] = [];
+      const erroredDocuments: any[] = [];
+
+      bulkResponse.items.forEach((action, i) => {
+        const operation = Object.keys(action)[0] as 'index';
+        const result = action[operation];
+
+        if (result && result.error) {
+          erroredDocuments.push({
+            status: result.status,
+            error: result.error,
+            document: operations[i * 2 + 1],
+          });
+        } else if (result) {
+          const articleId = parseInt(result._id, 10);
+          if (!isNaN(articleId)) {
+            successfulIds.push(articleId);
           }
-        });
-        if (erroredDocuments.length > 0) {
-            console.error("Errors during Elasticsearch bulk indexing:", JSON.stringify(erroredDocuments, null, 2));
         }
+      });
+
+      if (erroredDocuments.length > 0) {
+        console.error("Errors during Elasticsearch bulk indexing:", JSON.stringify(erroredDocuments, null, 2));
       }
 
-      const articleIdsToUpdate = batch.map(art => art.id).filter(id => id !== null) as number[];
-      if (articleIdsToUpdate.length > 0) {
+      if (successfulIds.length > 0) {
         await db.update(articles)
           .set({ indexed: 1 })
-          .where(inArray(articles.id, articleIdsToUpdate));
-        console.log(`Attempted to update 'indexed' status for ${articleIdsToUpdate.length} articles in the database.`);
+          .where(inArray(articles.id, successfulIds));
+        console.log(`Successfully updated 'indexed' status for ${successfulIds.length} articles in the database.`);
       }
       
-      if (!bulkResponse.errors) {
-        console.log(`Successfully indexed or attempted to index ${operations.length / 2} articles.`);
+      if (erroredDocuments.length === 0) {
+        console.log(`Successfully indexed all ${operations.length / 2} articles.`);
       }
     }
   } catch (err: any) {

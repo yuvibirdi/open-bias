@@ -13,6 +13,7 @@
   "dependencies": {
     "@open-bias/db": "workspace:*",
     "@elastic/elasticsearch": "^8.14.0",
+    "natural": "^7.0.0"
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",
