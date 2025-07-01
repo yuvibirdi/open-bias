@@ -11,40 +11,10 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Use simple HTTP client instead of official ES client to avoid Bun compatibility issues
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'articles';
 
-interface ArticleSourceData {
-  // Define based on your Elasticsearch document structure
-  // These are examples, adjust them to match your actual ES data
-  title: string;
-  url?: string; // Assuming 'link' comes from 'url' in ES
-  link?: string; // Allow both if data is inconsistent
-  summary?: string;
-  body?: string; // If summary is not available, maybe use body and truncate
-  image_url?: string;
-  imageUrl?: string; // Allow both
-  bias_label?: number; // Assuming 'bias' comes from 'bias_label' in DB
-  bias?: number; // Article's original bias at ingestion
-  published_date?: string;
-  published?: string; // Allow both
-  sourceBias?: number; // Current bias of the source, from ES
-  // Add any other fields you have in Elasticsearch
-  [key: string]: any; // To allow other fields
-}
-
-interface Article {
-  id: string; // Elasticsearch ID
-  title: string;
-  summary: string;
-  imageUrl: string;
-  bias: number;
-  link: string;
-  published: string; // Ensure this is always a string, even if defaulting
-}
-
-async function searchElasticsearch(query: any, size: number = 10) {
+async function searchElasticsearch(query: Record<string, unknown>, size: number = 10) {
   const searchBody = {
     query,
     size,
@@ -77,7 +47,7 @@ app.get("/articles", async (c) => {
 
     const results = await searchElasticsearch(esQuery, limit);
 
-    const hits = results.hits.hits.map((hit: any) => ({
+    const hits = results.hits.hits.map((hit: { _id: string; _source?: Record<string, unknown> }) => ({
       id: hit._id,
       title: hit._source?.title || "No title",
       link: hit._source?.link || "#",

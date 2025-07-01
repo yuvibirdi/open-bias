@@ -15,7 +15,7 @@ export default defineConfig([
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: ["./tsconfig.json", "./packages/*/tsconfig.json"],
+        project: ["./tsconfig.json", "./packages/admin-ui/tsconfig.app.json", "./packages/admin-ui/tsconfig.node.json"],
         tsconfigRootDir: "."
       }
     },
@@ -30,8 +30,8 @@ export default defineConfig([
     languageOptions: {
       parserOptions: {
         parser: tsParser,
-        project: ["./tsconfig.json", "./packages/*/tsconfig.json"],
-        tsconfigRootDir: "."
+        project: ["./packages/admin-ui/tsconfig.app.json"],
+        tsconfigRootDir: "./packages/admin-ui"
       }
     }
   },
@@ -42,7 +42,7 @@ export default defineConfig([
     settings: {
       "import/resolver": {
         typescript: {
-          project: ["./tsconfig.json", "./packages/*/tsconfig.json"],
+          project: ["./packages/admin-ui/tsconfig.app.json"],
         }
       }
     }

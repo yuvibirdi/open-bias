@@ -6,61 +6,61 @@ const initialSources: Omit<InsertSource, 'id' | 'fetchedAt'>[] = [
     name: 'Associated Press',
     url: 'https://apnews.com',
     rss: 'https://feeds.apnews.com/rss/apf-topnews',
-    bias: biasEnum.center,
+    bias: 'center',
   },
   {
     name: 'Reuters',
     url: 'https://www.reuters.com',
     rss: 'https://feeds.reuters.com/reuters/topNews',
-    bias: biasEnum.center,
+    bias: 'center',
   },
   {
     name: 'BBC News',
     url: 'https://www.bbc.com/news',
     rss: 'http://feeds.bbci.co.uk/news/rss.xml',
-    bias: biasEnum.center,
+    bias: 'center',
   },
   {
     name: 'NPR',
     url: 'https://www.npr.org',
     rss: 'https://feeds.npr.org/1001/rss.xml',
-    bias: biasEnum.left,
+    bias: 'left',
   },
   {
     name: 'Al Jazeera English',
     url: 'https://www.aljazeera.com',
     rss: 'https://www.aljazeera.com/xml/rss/all.xml',
-    bias: biasEnum.center,
+    bias: 'center',
   },
   {
     name: 'CNN',
     url: 'https://www.cnn.com',
     rss: 'http://rss.cnn.com/rss/edition.rss',
-    bias: biasEnum.left,
+    bias: 'left',
   },
   {
     name: 'Fox News',
     url: 'https://www.foxnews.com',
     rss: 'http://feeds.foxnews.com/foxnews/latest',
-    bias: biasEnum.right,
+    bias: 'right',
   },
   {
     name: 'The Guardian',
     url: 'https://www.theguardian.com',
     rss: 'https://www.theguardian.com/world/rss',
-    bias: biasEnum.left,
+    bias: 'left',
   },
   {
     name: 'Daily Wire',
     url: 'https://www.dailywire.com',
     rss: 'https://www.dailywire.com/feeds/rss.xml',
-    bias: biasEnum.right,
+    bias: 'right',
   },
   {
     name: 'Politico',
     url: 'https://www.politico.com',
     rss: 'https://www.politico.com/rss/politicopicks.xml',
-    bias: biasEnum.center,
+    bias: 'center',
   }
 ];
 
@@ -78,7 +78,7 @@ async function seedDatabase() {
       columns: { id: true, bias: true, name: true, url: true }
     });
 
-    let currentSourceBiasInDB: number | null | undefined = undefined;
+    let currentSourceBiasInDB: 'unknown' | 'left' | 'center' | 'right' | null | undefined = undefined;
     let sourceIdToProcess: number | undefined = undefined;
 
     if (existingSource) {
@@ -94,14 +94,14 @@ async function seedDatabase() {
       }
       
       // Update source bias if DB bias is unknown/null and seed bias is known
-      if ((currentSourceBiasInDB === biasEnum.unknown || currentSourceBiasInDB === null) && 
-          seedSrc.bias !== biasEnum.unknown) {
+      if ((currentSourceBiasInDB === 'unknown' || currentSourceBiasInDB === null) && 
+          seedSrc.bias !== 'unknown') {
         console.log(`Source "${seedSrc.name}" (ID: ${existingSource.id}) has unknown/null bias in DB. Updating to ${seedSrc.bias} from seed data.`);
         await db.update(sources)
           .set({ bias: seedSrc.bias })
           .where(eq(sources.id, existingSource.id));
         currentSourceBiasInDB = seedSrc.bias; // Reflect the update for subsequent article processing
-      } else if (currentSourceBiasInDB !== seedSrc.bias && seedSrc.bias !== biasEnum.unknown) {
+      } else if (currentSourceBiasInDB !== seedSrc.bias && seedSrc.bias !== 'unknown') {
         // DB bias is known but different from seed bias (and seed bias is not unknown)
         console.log(`Source "${seedSrc.name}" (ID: ${existingSource.id}) bias in DB (${currentSourceBiasInDB}) differs from seed data (${seedSrc.bias}). Updating to seed data bias.`);
         await db.update(sources)
@@ -113,9 +113,9 @@ async function seedDatabase() {
       }
     } else {
       // Source does not exist, insert it
-      if (seedSrc.bias !== biasEnum.unknown) { // Only insert if seed bias is known
+      if (seedSrc.bias !== 'unknown') { // Only insert if seed bias is known
         console.log(`Inserting new source: "${seedSrc.name}" (RSS: ${seedSrc.rss}) with bias ${seedSrc.bias}.`);
-        const newSourceResult = await db.insert(sources).values(seedSrc as InsertSource);
+        await db.insert(sources).values(seedSrc as InsertSource);
         // Assuming MySQL returns insertId in a way Drizzle can get or we might need to query back
         // For now, we'll query back by RSS to get the ID for article processing if needed.
         const inserted = await db.query.sources.findFirst({ where: eq(sources.rss, seedSrc.rss), columns: { id: true } });
@@ -131,7 +131,7 @@ async function seedDatabase() {
     }
 
     // Now, process articles for this source if its ID is known and its bias is definitive (not unknown/null)
-    if (sourceIdToProcess && currentSourceBiasInDB !== undefined && currentSourceBiasInDB !== null && currentSourceBiasInDB !== biasEnum.unknown) {
+    if (sourceIdToProcess && currentSourceBiasInDB !== undefined && currentSourceBiasInDB !== null && currentSourceBiasInDB !== 'unknown') {
       const definitiveBiasForSource = currentSourceBiasInDB;
       
       // Find articles for this source that need their bias corrected or are not yet indexed correctly with the new bias.

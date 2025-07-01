@@ -8,21 +8,21 @@ import {
   decimal,
   tinyint,
   index,
+  mysqlEnum,
 } from "drizzle-orm/mysql-core";
 
 //
 // ──────────────────────────────────────────────────────────────────────────────
 //  ENUMS / SMALL LOOKUP TABLES
 // ──────────────────────────────────────────────────────────────────────────────
-// 0 = unknown   1 = left   2 = center   3 = right
-//
-export const biasEnum = {
-  unknown: 0,
-  left: 1,
-  center: 2,
-  right: 3,
-} as const;
-export type Bias = keyof typeof biasEnum;
+
+export const biasEnum = [
+  "unknown",
+  "left",
+  "center",
+  "right",
+] as const;
+export type Bias = (typeof biasEnum)[number];
 
 //
 // ──────────────────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ export const sources = mysqlTable(
     name: varchar("name", { length: 128 }).notNull(),
     url: varchar("url", { length: 512 }).notNull(),
     rss: varchar("rss", { length: 512 }).notNull(),
-    bias: tinyint("bias").default(biasEnum.unknown),
+    bias: mysqlEnum("bias", biasEnum).default("unknown"),
     fetchedAt: datetime("fetched_at").default(sql`CURRENT_TIMESTAMP`),
   },
   (t) => ({
@@ -63,7 +63,7 @@ export const articles = mysqlTable(
     published: datetime("published").notNull(),
     indexed: tinyint("indexed").default(0), // 0 = not in Elastic yet
     imageUrl: text("image_url"),
-    bias: tinyint("bias").default(biasEnum.unknown),
+    bias: mysqlEnum("bias", biasEnum).default("unknown"),
     // New fields for bias analysis
     politicalLeaning: decimal("political_leaning", { precision: 5, scale: 4 }), // e.g., -1.0 (left) to 1.0 (right)
     sensationalism: decimal("sensationalism", { precision: 5, scale: 4 }), // e.g., 0.0 to 1.0

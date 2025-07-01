@@ -11,9 +11,10 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@open-bias/db": "workspace:*",
     "@elastic/elasticsearch": "^8.14.0",
-    "natural": "^7.0.0"
+    "@open-bias/db": "workspace:*",
+    "natural": "^7.0.0",
+    "openai": "^5.8.2"
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",

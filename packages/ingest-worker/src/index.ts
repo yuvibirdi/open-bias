@@ -28,10 +28,11 @@ type RSSItem = {
   image?: string | { url?: string }; // some feeds use <image><url>...
   itunes?: { image?: string }; // For podcasts or feeds with iTunes namespace
   media?: { content?: { $: { url?: string } }[] }; // Media RSS
-  [key: string]: any; // Allow other fields
+  mediaContent?: Array<{ $?: { url?: string; medium?: string } }>; // Media content array
+  [key: string]: unknown; // Allow other fields
 };
 
-const parser = new Parser<any, RSSItem>({ // Specify custom fields for parser to pick up
+const parser = new Parser<unknown, RSSItem>({ // Specify custom fields for parser to pick up
   customFields: {
     item: [
       'enclosure',
@@ -71,8 +72,8 @@ async function ingestOneFeed(src: Source) { // Use Source type from db
     } else if (typeof item.image?.url === 'string') {
         imageUrl = item.image.url;
     } else if (item.mediaContent && item.mediaContent.length > 0) {
-      const mediaImage = item.mediaContent.find((media: any) => media.$?.url && media.$?.medium === 'image');
-      if (mediaImage) {
+      const mediaImage = item.mediaContent.find((media) => media.$?.url && media.$?.medium === 'image');
+      if (mediaImage?.$ && mediaImage.$.url) {
         imageUrl = mediaImage.$.url;
       }
     }
@@ -88,7 +89,7 @@ async function ingestOneFeed(src: Source) { // Use Source type from db
         try {
           const d = parseISO(item.pubDate);
           return isNaN(d.valueOf()) ? new Date() : d;
-        } catch (e) {
+        } catch {
           console.warn(`Failed to parse date ${item.pubDate} for ${item.title}, using current date.`);
           return new Date();
         }
@@ -114,8 +115,8 @@ async function main() {
     }
     try {
       await ingestOneFeed(src as Source); // Cast to Source if type from select isn't specific enough
-    } catch (err: any) {
-      console.error(`Feed failed for ${src.name} (${src.rss}):`, err.message || err);
+    } catch (err: unknown) {
+      console.error(`Feed failed for ${src.name} (${src.rss}):`, err instanceof Error ? err.message : String(err));
     }
   }
 

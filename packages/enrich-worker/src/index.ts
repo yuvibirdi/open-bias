@@ -66,8 +66,8 @@ async function main() {
       });
       console.log("Index created with new mapping.");
     }
-  } catch (err: any) {
-    console.error("Error checking or creating Elasticsearch index:", err.meta?.body || err.message || err);
+  } catch (err: unknown) {
+    console.error("Error checking or creating Elasticsearch index:", err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 
@@ -128,10 +128,10 @@ async function main() {
 
   try {
     if (operations.length > 0) {
-      const bulkResponse = await es.bulk<{ index: { error?: any, status?: number, _id: string } }>({ refresh: true, operations });
+      const bulkResponse = await es.bulk<{ index: { error?: unknown, status?: number, _id: string } }>({ refresh: true, operations });
 
       const successfulIds: number[] = [];
-      const erroredDocuments: any[] = [];
+      const erroredDocuments: unknown[] = [];
 
       bulkResponse.items.forEach((action, i) => {
         const operation = Object.keys(action)[0] as 'index';
@@ -166,8 +166,8 @@ async function main() {
         console.log(`Successfully indexed all ${operations.length / 2} articles.`);
       }
     }
-  } catch (err: any) {
-    console.error("Fatal error during Elasticsearch bulk indexing or DB update:", err.meta?.body || err.message || err);
+  } catch (err: unknown) {
+    console.error("Fatal error during Elasticsearch bulk indexing or DB update:", err instanceof Error ? err.message : String(err));
   }
 
   console.log("Enrichment process completed.");
