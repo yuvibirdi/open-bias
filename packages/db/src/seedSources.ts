@@ -143,7 +143,7 @@ async function seedDatabase() {
         eq(articles.sourceId, sourceIdToProcess),
         or(
           isNull(articles.bias),
-          eq(articles.bias, biasEnum.unknown),
+          eq(articles.bias, "unknown"),
           ne(articles.bias, definitiveBiasForSource)
           // eq(articles.indexed, 0) // if we only want to update non-indexed or already marked ones
         )! // Non-null assertion for 'or' result

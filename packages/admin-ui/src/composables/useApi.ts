@@ -1,4 +1,6 @@
-const base = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+import { useAuth } from './useAuth'
+
+const base = import.meta.env.VITE_API_URL || ''
 
 export interface Article {
   id: number
@@ -18,9 +20,53 @@ export interface Source {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(base + path, init)
+  const { getAuthHeaders } = useAuth()
+  const authHeaders = getAuthHeaders()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...init?.headers as Record<string, string>,
+  }
+
+  // Only add auth headers if they exist
+  if (authHeaders.Authorization) {
+    headers.Authorization = authHeaders.Authorization
+  }
+
+  const res = await fetch(base + path, {
+    ...init,
+    headers,
+  })
+  
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json() as Promise<T>
+}
+
+export function useApi() {
+  const get = async <T>(path: string): Promise<T> => {
+    return api<T>(path)
+  }
+
+  const post = async <T>(path: string, data?: any): Promise<T> => {
+    return api<T>(path, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    })
+  }
+
+  const put = async <T>(path: string, data?: any): Promise<T> => {
+    return api<T>(path, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined,
+    })
+  }
+
+  const del = async <T>(path: string): Promise<T> => {
+    return api<T>(path, {
+      method: 'DELETE',
+    })
+  }
+
+  return { get, post, put, delete: del }
 }
 
 export async function getArticles(params?: { limit?: number; bias?: number }): Promise<{ articles: Article[] }> {

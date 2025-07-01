@@ -11,37 +11,48 @@
         <CNavItem>
           <CNavLink to="/dashboard"> Dashboard </CNavLink>
         </CNavItem>
+        <CNavItem>
+          <CNavLink to="/stories"> Stories </CNavLink>
+        </CNavItem>
+        <CNavItem>
+          <CNavLink to="/sources"> Sources </CNavLink>
+        </CNavItem>
       </CHeaderNav>
       <CHeaderNav>
-        <CNavItem>
-          <CNavLink href="#">
-            <CIcon class="mx-2" icon="cil-bell" size="lg" />
-          </CNavLink>
-        </CNavItem>
-        <CNavItem>
-          <CNavLink href="#">
-            <CIcon class="mx-2" icon="cil-list" size="lg" />
-          </CNavLink>
-        </CNavItem>
-        <CNavItem>
-          <CNavLink href="#">
-            <CIcon class="mx-2" icon="cil-envelope-open" size="lg" />
-          </CNavLink>
-        </CNavItem>
-        <AppHeaderDropdownAccnt />
+        <!-- Show login button if not authenticated -->
+        <template v-if="!isAuthenticated">
+          <CNavItem>
+            <CButton @click="showAuthModal = true" color="primary" variant="outline">
+              Sign In
+            </CButton>
+          </CNavItem>
+        </template>
+        
+        <!-- Show user profile if authenticated -->
+        <template v-else>
+          <UserProfileDropdown />
+        </template>
       </CHeaderNav>
     </CContainer>
     <CHeaderDivider />
     <CContainer fluid>
       <AppBreadcrumb />
     </CContainer>
+
+    <!-- Auth Modal -->
+    <AuthModal v-if="showAuthModal" @close="showAuthModal = false" />
   </CHeader>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import AppBreadcrumb from './AppBreadcrumb.vue'
-import AppHeaderDropdownAccnt from './AppHeaderDropdownAccnt.vue'
+import UserProfileDropdown from './UserProfileDropdown.vue'
+import AuthModal from './AuthModal.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useUIStore } from '@/stores'
 
+const { isAuthenticated } = useAuth()
 const uiStore = useUIStore()
+const showAuthModal = ref(false)
 </script>

@@ -4,6 +4,8 @@
  * 1. Reads every RSS feed stored in the `sources` table (expects `sources.bias` to be set)
  * 2. Parses the feed with rss‑parser
  * 3. Inserts new articles into the `articles` table (idempotent), including `imageUrl` and `bias`.
+ * 4. Groups similar articles from different sources into story groups
+ * 5. Updates coverage tracking for multi-source stories
  *
  * Run locally with:
  *    bun run packages/ingest-worker/src/index.ts
@@ -11,9 +13,10 @@
  */
 
 import Parser from "rss-parser";
-import { db, sources, articles, type Source, type InsertArticle } from "@open-bias/db";
-import { eq } from "drizzle-orm";
-import { parseISO } from "date-fns";
+import { db, sources, articles, articleGroups, storyCoverage, type Source, type InsertArticle } from "@open-bias/db";
+import { eq, and, isNull, sql, desc } from "drizzle-orm";
+import { parseISO, subHours } from "date-fns";
+import { TfIdf } from "natural";
 
 // Extend RSSItem type to include potential image fields
 type RSSItem = {
@@ -79,7 +82,7 @@ async function ingestOneFeed(src: Source) { // Use Source type from db
     }
     // Add more extraction logic if needed for specific feeds
 
-    const articleToInsert: InsertArticle = {
+    const articleToInsert = {
       sourceId: src.id,
       title: item.title,
       link: item.link,
@@ -103,6 +106,135 @@ async function ingestOneFeed(src: Source) { // Use Source type from db
 
     console.log(`+ [${src.name}] ${item.title}`);
   }
+}
+
+const GROUPING_SIMILARITY_THRESHOLD = 0.3;
+const RECENT_HOURS = 48; // Look for similar articles within 48 hours
+
+async function groupNewArticle(insertedId: any, title: string, summary?: string) {
+  if (!summary || summary.length < 20) return;
+
+  // Find recent articles (within 48 hours) that might be about the same story
+  const recentCutoff = subHours(new Date(), RECENT_HOURS);
+  
+  const recentArticles = await db
+    .select({
+      id: articles.id,
+      title: articles.title,
+      summary: articles.summary,
+      sourceId: articles.sourceId,
+      bias: articles.bias,
+      groupId: articles.groupId,
+    })
+    .from(articles)
+    .where(
+      and(
+        sql`${articles.published} >= ${recentCutoff}`,
+        sql`${articles.id} != ${insertedId}`
+      )
+    )
+    .orderBy(desc(articles.published))
+    .limit(100); // Limit to prevent performance issues
+
+  if (recentArticles.length === 0) return;
+
+  // Use TF-IDF to find similar articles
+  const tfidf = new TfIdf();
+  const currentText = `${title} ${summary}`;
+  
+  // Add the current article first
+  tfidf.addDocument(currentText);
+  
+  // Add recent articles
+  const candidateArticles = recentArticles.filter(a => a.summary && a.summary.length > 20);
+  for (const article of candidateArticles) {
+    tfidf.addDocument(`${article.title} ${article.summary}`);
+  }
+
+  // Find the most similar article
+  let bestMatch: typeof candidateArticles[0] | null = null;
+  let bestSimilarity = 0;
+
+  for (let i = 0; i < candidateArticles.length; i++) {
+    const similarity = tfidf.tfidf(currentText, i + 1); // +1 because current article is at index 0
+    if (similarity > bestSimilarity && similarity > GROUPING_SIMILARITY_THRESHOLD) {
+      bestSimilarity = similarity;
+      bestMatch = candidateArticles[i];
+    }
+  }
+
+  if (bestMatch) {
+    let groupId = bestMatch.groupId;
+    
+    // If the best match doesn't have a group, create one
+    if (!groupId) {
+      const groupResult = await db.insert(articleGroups).values({
+        name: bestMatch.title.substring(0, 500), // Truncate to fit
+        masterArticleId: bestMatch.id,
+      });
+      groupId = groupResult[0].insertId;
+      
+      // Update the best match article to be in this group
+      await db.update(articles)
+        .set({ groupId })
+        .where(eq(articles.id, bestMatch.id));
+    }
+
+    // Add the new article to the group
+    await db.update(articles)
+      .set({ groupId })
+      .where(eq(articles.id, insertedId));
+
+    // Update coverage tracking
+    await updateCoverageTracking(groupId);
+
+    console.log(`  -> Grouped with existing story (similarity: ${bestSimilarity.toFixed(3)})`);
+  }
+}
+
+async function updateCoverageTracking(groupId: number) {
+  // Get all articles in this group with their bias information
+  const groupArticles = await db
+    .select({
+      id: articles.id,
+      bias: articles.bias,
+      published: articles.published,
+    })
+    .from(articles)
+    .where(eq(articles.groupId, groupId));
+
+  const leftCount = groupArticles.filter(a => a.bias === 'left').length;
+  const centerCount = groupArticles.filter(a => a.bias === 'center').length;
+  const rightCount = groupArticles.filter(a => a.bias === 'right').length;
+  const totalCount = groupArticles.length;
+
+  // Calculate coverage score (0-100) based on how well represented different perspectives are
+  const maxPossibleBalance = Math.min(leftCount + centerCount + rightCount, 3); // Perfect would be at least 1 from each
+  const actualBalance = (leftCount > 0 ? 1 : 0) + (centerCount > 0 ? 1 : 0) + (rightCount > 0 ? 1 : 0);
+  const coverageScore = (actualBalance / 3) * 100;
+
+  const firstReported = groupArticles.reduce((earliest, article) => 
+    !earliest || article.published < earliest ? article.published : earliest, 
+    null as Date | null
+  );
+
+  // Upsert coverage tracking
+  await db.insert(storyCoverage).values({
+    groupId,
+    leftCoverage: leftCount,
+    centerCoverage: centerCount,
+    rightCoverage: rightCount,
+    totalCoverage: totalCount,
+    coverageScore,
+    firstReported,
+  }).onDuplicateKeyUpdate({
+    leftCoverage: leftCount,
+    centerCoverage: centerCount,
+    rightCoverage: rightCount,
+    totalCoverage: totalCount,
+    coverageScore,
+    lastUpdated: new Date(),
+  });
 }
 
 async function main() {

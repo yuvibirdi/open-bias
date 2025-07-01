@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { db, sources as dbSources } from "@open-bias/db";
+import storiesApp from "./stories";
+import authApp from "./auth";
+import userApp from "./user";
+import notificationApp from "./notifications";
 
 const app = new Hono();
 
@@ -10,6 +14,18 @@ app.use('*', cors({
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Mount stories API
+app.route("/", storiesApp);
+
+// Mount auth API
+app.route("/auth", authApp);
+
+// Mount user API
+app.route("/user", userApp);
+
+// Mount notifications API
+app.route("/notifications", notificationApp);
 
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'articles';

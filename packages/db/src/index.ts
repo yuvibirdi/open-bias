@@ -25,3 +25,6 @@ export type Source = InferSelectModel<typeof schema.sources>;
 export type InsertSource = InferInsertModel<typeof schema.sources>;
 export type Article = InferSelectModel<typeof schema.articles>;
 export type InsertArticle = InferInsertModel<typeof schema.articles>;
+
+// Export enhanced sources seeding
+export { seedExpandedSources, expandedSources } from "./expandedSources";

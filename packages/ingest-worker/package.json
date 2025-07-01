@@ -12,8 +12,12 @@
   },
   "dependencies": {
     "@open-bias/db": "workspace:*",
-    "rss-parser": "^3.13.0",
-    "date-fns": "^3.6.0"
+    "@types/natural": "^6.0.1",
+    "commander": "^14.0.0",
+    "date-fns": "^4.1.0",
+    "fastest-levenshtein": "^1.0.16",
+    "natural": "^8.1.0",
+    "rss-parser": "^3.13.0"
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",

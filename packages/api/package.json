@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@open-bias/common": "workspace:*",
+    "@open-bias/db": "workspace:*",
     "@types/express": "^5.0.2",
-    "hono": "^4.5.1"
+    "hono": "^4.5.1",
+    "bcryptjs": "^2.4.3"
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",
