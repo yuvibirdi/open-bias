@@ -2,7 +2,8 @@ import { Client, HttpConnection } from "@elastic/elasticsearch";
 import { db, articles, sources } from "@open-bias/db";
 import { eq, isNull, or, inArray } from "drizzle-orm";
 import { groupArticles } from "./grouper";
-import { analyzeArticleGroups } from "./analyzer";
+import { analyzeArticleGroups } from "./analyzer-unified";
+import { testAIConnectivity } from "./ai-analysis";
 
 console.log("ELASTIC_URL:", process.env.ELASTIC_URL);
 const esNode = process.env.ELASTIC_URL;
@@ -22,6 +23,17 @@ const es = new Client({
 });
 
 async function main() {
+  // Step 0: Test AI connectivity
+  console.log("--- Testing AI Connectivity ---");
+  const aiTest = await testAIConnectivity();
+  if (aiTest.available) {
+    console.log(`✅ AI Provider: ${aiTest.provider.toUpperCase()} - Available`);
+  } else {
+    console.error(`❌ AI Provider: ${aiTest.provider.toUpperCase()} - Not Available`);
+    console.error(`Error: ${aiTest.error}`);
+    console.log("⚠️ Proceeding without AI analysis...");
+  }
+
   // Step 1: Group similar articles
   console.log("--- Starting Article Grouping ---");
   await groupArticles();
@@ -29,7 +41,11 @@ async function main() {
 
   // Step 2: Analyze grouped articles for bias
   console.log("--- Starting Bias Analysis ---");
-  await analyzeArticleGroups();
+  if (aiTest.available) {
+    await analyzeArticleGroups();
+  } else {
+    console.log("⚠️ Skipping bias analysis - AI not available");
+  }
   console.log("--- Finished Bias Analysis ---");
 
   // Step 3: Index enriched articles into Elasticsearch
@@ -143,7 +159,7 @@ async function main() {
             error: result.error,
             document: operations[i * 2 + 1],
           });
-        } else if (result) {
+        } else if (result && result._id) {
           const articleId = parseInt(result._id, 10);
           if (!isNaN(articleId)) {
             successfulIds.push(articleId);

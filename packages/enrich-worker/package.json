@@ -19,6 +19,9 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
-    "lint": "bunx eslint ./src/"
+    "lint": "bunx eslint ./src/",
+    "test": "bun run test-e2e.ts",
+    "test:e2e": "bun run test-e2e.ts",
+    "seed": "bun run seed.ts"
   }
 }

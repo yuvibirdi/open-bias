@@ -1,20 +1,6 @@
 import { db, articles, articleGroups, type Article } from "@open-bias/db";
 import { eq } from "drizzle-orm";
-
-// Uncomment and install openai if you want to use OpenAI API
-declare const process: { env: Record<string, string | undefined> };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let openai: any = null;
-if (process.env.OPENAI_API_KEY) {
-  try {
-    // Dynamically import openai only if needed
-    import("openai").then((openaiModule) => {
-      openai = openaiModule;
-    });
-  } catch {
-    console.warn("OpenAI SDK not installed. Falling back to mock LLM.");
-  }
-}
+import { analyzeBiasWithAI } from "./ai-analysis";
 
 interface BiasAnalysis {
     articleId: number;
