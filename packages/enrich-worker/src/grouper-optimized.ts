@@ -2,6 +2,7 @@ import { db, articles, articleGroups, sources, type Article } from "@open-bias/d
 import { isNull, inArray, eq, ne, isNotNull, and } from "drizzle-orm";
 import { getEmbeddings, cosineSimilarity, analyzeArticleSimilarity, testLLMConnection, validateModels, type ArticleContent } from "./llm-similarity";
 import { preprocessArticles, findSemanticMatches, createCandidatePairs, type ArticleKeywords, type SemanticMatch } from "./semantic-preprocessing";
+import { analyzeGroupImmediately } from "./analyzer-unified";
 
 // Configuration constants
 const EMBEDDING_SIMILARITY_THRESHOLD = 0.55; // Lower threshold for initial filtering
@@ -19,6 +20,7 @@ interface GrouperConfig {
   llmThreshold?: number; // LLM similarity threshold
   testMode?: boolean; // Enable test mode with smaller batches
   verbose?: boolean; // Enable verbose logging
+  aiAvailable?: boolean; // Whether AI analysis is available for immediate processing
 }
 
 interface ArticleWithEmbedding extends Article {
@@ -175,7 +177,8 @@ async function verifyAndGroupWithLLM(
   articlesWithEmbeddings: ArticleWithEmbedding[],
   candidates: Map<number, number[]>,
   threshold: number = LLM_SIMILARITY_THRESHOLD,
-  verbose: boolean = false
+  verbose: boolean = false,
+  aiAvailable: boolean = false
 ): Promise<void> {
   console.log(`🤖 Verifying candidates with LLM (threshold: ${threshold}) and creating groups...`);
   
@@ -263,6 +266,20 @@ async function verifyAndGroupWithLLM(
         if (verbose) {
           console.log(`      Articles: ${groupMembers.join(', ')}\n`);
         }
+
+        // 🚀 IMMEDIATE BIAS ANALYSIS - Analyze the group right after creation!
+        if (aiAvailable) {
+          console.log(`   🧠 Analyzing bias for group ${newGroup.insertId} immediately...`);
+          const analysisSuccess = await analyzeGroupImmediately(newGroup.insertId);
+          if (analysisSuccess) {
+            console.log(`   ✅ Group ${newGroup.insertId} analyzed successfully`);
+          } else {
+            console.log(`   ⚠️ Group ${newGroup.insertId} analysis failed, but continuing...`);
+          }
+        } else {
+          console.log(`   ⏩ Skipping immediate analysis for group ${newGroup.insertId} (AI not available)`);
+        }
+        
       } catch (error) {
         console.error(`   ❌ Failed to create group: ${error}`);
       }
@@ -338,7 +355,8 @@ export async function groupArticles(config: GrouperConfig = {}): Promise<void> {
     embeddingThreshold = EMBEDDING_SIMILARITY_THRESHOLD,
     llmThreshold = LLM_SIMILARITY_THRESHOLD,
     testMode = false,
-    verbose = false
+    verbose = false,
+    aiAvailable = false
   } = config;
 
   console.log("🚀 Starting Multi-Stage Article Grouping...\n");
@@ -412,7 +430,7 @@ export async function groupArticles(config: GrouperConfig = {}): Promise<void> {
   
   // Stage 5: LLM verification and group creation
   console.log("🤖 Stage 5: LLM Verification and Group Creation...");
-  await verifyAndGroupWithLLM(articlesWithEmbeddings, embeddingCandidates, llmThreshold, verbose);
+  await verifyAndGroupWithLLM(articlesWithEmbeddings, embeddingCandidates, llmThreshold, verbose, aiAvailable);
   
   console.log("✅ Multi-stage grouping process completed!");
 }

@@ -7,6 +7,12 @@
  * 3. Elasticsearch indexing of enriched articles
  */
 
+// 🔧 DEVELOPMENT MAGIC NUMBERS - Control processing limits during development
+// Set to -1 to process ALL, or any positive number to limit for development
+// This helps when you don't have GPU compute and need faster processing times
+const DEV_ARTICLE_LIMIT: number = 20; // Total articles to process
+const DEV_GROUP_ANALYSIS_LIMIT: number = 5; // Groups to analyze per run
+
 import { Client, HttpConnection } from "@elastic/elasticsearch";
 import { db, articles, sources } from "@open-bias/db";
 import { eq, isNull, or, inArray } from "drizzle-orm";
@@ -32,7 +38,22 @@ const es = new Client({
 });
 
 /**
- * Main enrichment pipeline
+ * Main enrichment pipeline - OPTIMIZED APPROACH
+ * 
+ * NEW EFFICIENT FLOW:
+ * 1. Group articles → 2. Immediately analyze each group as it's formed → 3. Index analyzed articles
+ * 
+ * Benefits:
+ * - Lower memory usage (process groups one by one)
+ * - Faster feedback during development
+ * - More resilient (if one group fails, others continue)
+ * - Parallel processing of group formation + bias analysis
+ * 
+ * Pipeline steps:
+ * 1. Test AI connectivity
+ * 2. Group articles with integrated real-time bias analysis
+ * 3. Fallback analysis for any missed groups
+ * 4. Index all analyzed articles to Elasticsearch
  */
 async function main() {
   console.log("🚀 Starting Enrich-Worker Pipeline...\n");
@@ -48,36 +69,45 @@ async function main() {
     console.log("⚠️ Proceeding without AI analysis...\n");
   }
 
-  // Step 2: Group similar articles using optimized multi-stage algorithm
-  console.log("🔗 Step 2: Article Grouping (Multi-Stage Algorithm)");
+  // Step 2: Group similar articles with integrated bias analysis
+  console.log("🔗 Step 2: Article Grouping + Immediate Bias Analysis");
+  console.log(`🎯 Development Limit: ${DEV_ARTICLE_LIMIT === -1 ? 'ALL ARTICLES' : `${DEV_ARTICLE_LIMIT} articles`}`);
+  if (aiTest.available) {
+    console.log("✅ AI available - bias analysis will happen immediately after each group is formed");
+  } else {
+    console.log("⚠️ AI not available - only grouping will be performed");
+  }
+  
   try {
     await groupArticles({
-      maxTotalArticles: 0, // Process all available articles
+      maxTotalArticles: DEV_ARTICLE_LIMIT, // Use magic number for development
       maxArticlesPerSource: 50,
       semanticThreshold: 0.3,
       embeddingThreshold: 0.55,
       llmThreshold: 0.75,
       testMode: false,
-      verbose: false
+      verbose: false,
+      aiAvailable: aiTest.available // Pass AI availability to grouper
     });
-    console.log("✅ Article grouping completed\n");
+    console.log("✅ Article grouping and integrated bias analysis completed\n");
   } catch (error) {
     console.error("❌ Article grouping failed:", error);
-    console.log("⚠️ Continuing with bias analysis and indexing...\n");
+    console.log("⚠️ Continuing with any remaining analysis and indexing...\n");
   }
 
-  // Step 3: Analyze grouped articles for bias
-  console.log("🧠 Step 3: AI Bias Analysis");
+  // Step 3: Analyze any remaining unanalyzed groups (fallback)
+  console.log("🧠 Step 3: Fallback Bias Analysis (for any missed groups)");
+  console.log(`🎯 Group Analysis Limit: ${DEV_GROUP_ANALYSIS_LIMIT === -1 ? 'ALL GROUPS' : `${DEV_GROUP_ANALYSIS_LIMIT} groups`}`);
   if (aiTest.available) {
     try {
-      await analyzeArticleGroups();
-      console.log("✅ Bias analysis completed\n");
+      await analyzeArticleGroups(DEV_GROUP_ANALYSIS_LIMIT);
+      console.log("✅ Fallback bias analysis completed\n");
     } catch (error) {
-      console.error("❌ Bias analysis failed:", error);
+      console.error("❌ Fallback bias analysis failed:", error);
       console.log("⚠️ Continuing with indexing...\n");
     }
   } else {
-    console.log("⚠️ Skipping bias analysis - AI not available\n");
+    console.log("⚠️ Skipping fallback bias analysis - AI not available\n");
   }
 
   // Step 4: Index enriched articles into Elasticsearch
