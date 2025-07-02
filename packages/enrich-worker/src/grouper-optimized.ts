@@ -1,10 +1,12 @@
 import { db, articles, articleGroups, sources, type Article } from "@open-bias/db";
 import { isNull, inArray, eq, ne, isNotNull, and } from "drizzle-orm";
 import { getEmbeddings, cosineSimilarity, analyzeArticleSimilarity, testLLMConnection, validateModels, type ArticleContent } from "./llm-similarity";
+import { preprocessArticles, findSemanticMatches, createCandidatePairs, type ArticleKeywords, type SemanticMatch } from "./semantic-preprocessing";
 
 // Configuration constants
 const EMBEDDING_SIMILARITY_THRESHOLD = 0.55; // Lower threshold for initial filtering
 const LLM_SIMILARITY_THRESHOLD = 0.75; // Higher threshold for final grouping
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.3; // Threshold for semantic keyword matching
 const DEFAULT_BATCH_SIZE = 100; // Default batch size for production
 const DEFAULT_MAX_ARTICLES_PER_SOURCE = 50; // Default max articles per source
 const MAGIC_NUMBER_DEFAULT = -1; // -1 means process all available articles
@@ -12,6 +14,7 @@ const MAGIC_NUMBER_DEFAULT = -1; // -1 means process all available articles
 interface GrouperConfig {
   maxTotalArticles?: number; // Magic number: total articles to process (-1 for all)
   maxArticlesPerSource?: number; // Max articles per source
+  semanticThreshold?: number; // Semantic keyword similarity threshold
   embeddingThreshold?: number; // Embedding similarity threshold
   llmThreshold?: number; // LLM similarity threshold
   testMode?: boolean; // Enable test mode with smaller batches
@@ -273,24 +276,78 @@ async function verifyAndGroupWithLLM(
 }
 
 /**
+ * Verify semantic candidates using embedding similarity
+ */
+function verifyWithEmbeddings(
+  articlesWithEmbeddings: ArticleWithEmbedding[],
+  semanticCandidates: Map<number, number[]>,
+  threshold: number = EMBEDDING_SIMILARITY_THRESHOLD,
+  verbose: boolean = false
+): Map<number, number[]> {
+  console.log(`🔍 Verifying semantic candidates with embeddings (threshold: ${threshold})...`);
+  
+  const embeddingCandidates = new Map<number, number[]>();
+  const articleMap = new Map(articlesWithEmbeddings.map(a => [a.id, a]));
+  
+  let verifications = 0;
+  let passed = 0;
+  
+  for (const [articleId, candidateIds] of semanticCandidates.entries()) {
+    const article = articleMap.get(articleId);
+    if (!article || !article.embedding?.length) continue;
+    
+    const verifiedCandidates: number[] = [];
+    
+    for (const candidateId of candidateIds) {
+      const candidate = articleMap.get(candidateId);
+      if (!candidate || !candidate.embedding?.length) continue;
+      
+      verifications++;
+      const similarity = cosineSimilarity(article.embedding, candidate.embedding);
+      
+      if (similarity > threshold) {
+        verifiedCandidates.push(candidateId);
+        passed++;
+        
+        if (verbose) {
+          console.log(`   ✅ Embedding match: "${article.title.substring(0, 30)}..." vs "${candidate.title.substring(0, 30)}..." (${similarity.toFixed(3)})`);
+        }
+      } else if (verbose) {
+        console.log(`   ❌ Embedding reject: "${article.title.substring(0, 30)}..." vs "${candidate.title.substring(0, 30)}..." (${similarity.toFixed(3)})`);
+      }
+    }
+    
+    if (verifiedCandidates.length > 0) {
+      embeddingCandidates.set(articleId, verifiedCandidates);
+    }
+  }
+  
+  console.log(`📊 Embedding verification: ${passed}/${verifications} candidates passed (${(passed/verifications*100).toFixed(1)}%)`);
+  
+  return embeddingCandidates;
+}
+
+/**
  * Optimized article grouping with multi-stage filtering
  */
 export async function groupArticles(config: GrouperConfig = {}): Promise<void> {
   const {
     maxTotalArticles = MAGIC_NUMBER_DEFAULT,
     maxArticlesPerSource = DEFAULT_MAX_ARTICLES_PER_SOURCE,
+    semanticThreshold = SEMANTIC_SIMILARITY_THRESHOLD,
     embeddingThreshold = EMBEDDING_SIMILARITY_THRESHOLD,
     llmThreshold = LLM_SIMILARITY_THRESHOLD,
     testMode = false,
     verbose = false
   } = config;
 
-  console.log("🚀 Starting Optimized Article Grouping...\n");
+  console.log("🚀 Starting Multi-Stage Article Grouping...\n");
   
   if (verbose) {
     console.log("📋 Configuration:");
     console.log(`   Max total articles: ${maxTotalArticles === -1 ? 'ALL' : maxTotalArticles}`);
     console.log(`   Max per source: ${maxArticlesPerSource}`);
+    console.log(`   Semantic threshold: ${semanticThreshold}`);
     console.log(`   Embedding threshold: ${embeddingThreshold}`);
     console.log(`   LLM threshold: ${llmThreshold}`);
     console.log(`   Test mode: ${testMode}\n`);
@@ -318,14 +375,44 @@ export async function groupArticles(config: GrouperConfig = {}): Promise<void> {
     return;
   }
   
-  // Stage 2: Pre-compute embeddings
-  const articlesWithEmbeddings = await precomputeEmbeddings(ungroupedArticles);
+  // Stage 2: Semantic preprocessing and keyword matching
+  console.log("🔍 Stage 2: Semantic Preprocessing...");
+  const processedArticles = preprocessArticles(ungroupedArticles);
+  const semanticMatches = findSemanticMatches(processedArticles, semanticThreshold);
+  const semanticCandidates = createCandidatePairs(semanticMatches, 10); // Max 10 candidates per article
   
-  // Stage 3: Fast embedding similarity screening (use configured threshold)
-  const candidates = findEmbeddingSimilarCandidates(articlesWithEmbeddings, embeddingThreshold);
+  if (semanticCandidates.size === 0) {
+    console.log("✅ No semantic matches found. No groups to create.");
+    return;
+  }
   
-  // Stage 4: LLM verification and immediate group creation (use configured threshold)
-  await verifyAndGroupWithLLM(articlesWithEmbeddings, candidates, llmThreshold, verbose);
+  // Stage 3: Pre-compute embeddings for articles with semantic matches
+  console.log("🧮 Stage 3: Computing Embeddings for Semantic Candidates...");
+  const candidateArticleIds = new Set<number>();
+  for (const [articleId, candidates] of semanticCandidates.entries()) {
+    candidateArticleIds.add(articleId);
+    candidates.forEach(id => candidateArticleIds.add(id));
+  }
   
-  console.log("✅ Optimized grouping process completed!");
+  const articlesForEmbedding = ungroupedArticles.filter(article => 
+    candidateArticleIds.has(article.id)
+  );
+  
+  console.log(`   🎯 Computing embeddings for ${articlesForEmbedding.length} articles (filtered from ${ungroupedArticles.length})`);
+  const articlesWithEmbeddings = await precomputeEmbeddings(articlesForEmbedding);
+  
+  // Stage 4: Embedding similarity verification on semantic candidates
+  console.log("📊 Stage 4: Embedding Similarity Verification...");
+  const embeddingCandidates = verifyWithEmbeddings(articlesWithEmbeddings, semanticCandidates, embeddingThreshold, verbose);
+  
+  if (embeddingCandidates.size === 0) {
+    console.log("✅ No embedding matches found. No groups to create.");
+    return;
+  }
+  
+  // Stage 5: LLM verification and group creation
+  console.log("🤖 Stage 5: LLM Verification and Group Creation...");
+  await verifyAndGroupWithLLM(articlesWithEmbeddings, embeddingCandidates, llmThreshold, verbose);
+  
+  console.log("✅ Multi-stage grouping process completed!");
 }

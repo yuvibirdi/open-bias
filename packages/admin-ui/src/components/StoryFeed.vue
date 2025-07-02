@@ -81,56 +81,81 @@
         class="story-card"
         @click="navigateToStory(story)"
       >
-        <!-- Story Header -->
-        <div class="story-header">
-          <h2 class="story-title">{{ story.title }}</h2>
-          <div class="story-meta">
-            <span class="article-count">{{ story.totalArticles }} sources</span>
-            <span class="coverage-badge" :class="getCoverageBadgeClass(story.coverageScore)">
-              {{ getCoverageText(story.coverageScore) }}
-            </span>
-            <span class="timestamp">{{ formatTimestamp(story.lastUpdated) }}</span>
-          </div>
-        </div>
-
-        <!-- Coverage Visualization -->
-        <div class="coverage-visualization">
-          <div class="bias-distribution">
-            <div class="bias-bar">
-              <div 
-                class="bias-segment left" 
-                :style="{ width: getBiasPercentage(story, 'left') + '%' }"
-                :title="`${story.leftCoverage} left-leaning sources`"
-              ></div>
-              <div 
-                class="bias-segment center" 
-                :style="{ width: getBiasPercentage(story, 'center') + '%' }"
-                :title="`${story.centerCoverage} center sources`"
-              ></div>
-              <div 
-                class="bias-segment right" 
-                :style="{ width: getBiasPercentage(story, 'right') + '%' }"
-                :title="`${story.rightCoverage} right-leaning sources`"
-              ></div>
+        <div class="story-card-content">
+          <!-- Story Image -->
+          <div class="story-image-container">
+            <img 
+              v-if="getStoryImage(story)"
+              :src="getStoryImage(story)"
+              :alt="story.title"
+              class="story-image"
+              loading="lazy"
+              @error="handleImageError"
+            />
+            <div 
+              v-else 
+              class="story-image-placeholder"
+            >
+              <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+              </svg>
             </div>
           </div>
-          
-          <div class="coverage-labels">
-            <span class="left-label">{{ story.leftCoverage }} Left</span>
-            <span class="center-label">{{ story.centerCoverage }} Center</span>
-            <span class="right-label">{{ story.rightCoverage }} Right</span>
+
+          <!-- Story Content -->
+          <div class="story-content">
+            <!-- Story Header -->
+            <div class="story-header">
+              <h2 class="story-title">{{ story.title }}</h2>
+              <div class="story-meta">
+                <span class="article-count">{{ story.totalArticles }} sources</span>
+                <span class="coverage-badge" :class="getCoverageBadgeClass(story.coverageScore)">
+                  {{ getCoverageText(story.coverageScore) }}
+                </span>
+                <span class="timestamp">{{ formatTimestamp(story.lastUpdated) }}</span>
+              </div>
+            </div>
+
+            <!-- Story Summary -->
+            <div class="story-summary">
+              <p>{{ story.neutralSummary || 'Summary not yet available' }}</p>
+            </div>
+
+            <!-- Coverage Visualization -->
+            <div class="coverage-visualization">
+              <div class="bias-distribution">
+                <div class="bias-bar">
+                  <div 
+                    class="bias-segment left" 
+                    :style="{ width: getBiasPercentage(story, 'left') + '%' }"
+                    :title="`${story.leftCoverage} left-leaning sources`"
+                  ></div>
+                  <div 
+                    class="bias-segment center" 
+                    :style="{ width: getBiasPercentage(story, 'center') + '%' }"
+                    :title="`${story.centerCoverage} center sources`"
+                  ></div>
+                  <div 
+                    class="bias-segment right" 
+                    :style="{ width: getBiasPercentage(story, 'right') + '%' }"
+                    :title="`${story.rightCoverage} right-leaning sources`"
+                  ></div>
+                </div>
+              </div>
+              
+              <div class="coverage-labels">
+                <span class="left-label">{{ story.leftCoverage }} Left</span>
+                <span class="center-label">{{ story.centerCoverage }} Center</span>
+                <span class="right-label">{{ story.rightCoverage }} Right</span>
+              </div>
+            </div>
+
+            <!-- Blindspot Alert -->
+            <div v-if="story.blindspotType" class="blindspot-alert">
+              <icon name="alert-triangle" />
+              <span>Missing {{ story.blindspotType.replace('_', ' ') }} perspective</span>
+            </div>
           </div>
-        </div>
-
-        <!-- Story Summary -->
-        <div class="story-summary">
-          <p>{{ story.neutralSummary || 'Summary not yet available' }}</p>
-        </div>
-
-        <!-- Blindspot Alert -->
-        <div v-if="story.blindspotType" class="blindspot-alert">
-          <icon name="alert-triangle" />
-          <span>Missing {{ story.blindspotType.replace('_', ' ') }} perspective</span>
         </div>
       </div>
 
@@ -326,6 +351,17 @@ const formatTimestamp = (timestamp: Date | null) => {
   return `${diffDays}d ago`
 }
 
+const getStoryImage = (story: Story) => {
+  // For now, we'll need to get the first article image from the story
+  // This would ideally come from the API response
+  return null // TODO: Add imageUrl to story data from API
+}
+
+const handleImageError = (event: Event) => {
+  const img = event.target as HTMLImageElement
+  img.style.display = 'none'
+}
+
 // Lifecycle
 onMounted(() => {
   console.log('StoryFeed mounted, props:', props)
@@ -439,21 +475,79 @@ onMounted(() => {
 .story-card {
   background: white;
   border: 1px solid #e0e0e0;
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 16px;
+  overflow: hidden;
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .story-card:hover {
   border-color: #0066cc;
-  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
-  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 102, 204, 0.15);
+  transform: translateY(-4px);
+}
+
+.story-card-content {
+  display: flex;
+  gap: 20px;
+}
+
+.story-image-container {
+  flex-shrink: 0;
+  width: 200px;
+  height: 140px;
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 16px 0 16px 16px;
+}
+
+.story-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.story-image:hover {
+  transform: scale(1.05);
+}
+
+.story-image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.story-content {
+  flex: 1;
+  padding: 20px 20px 20px 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .story-header {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 768px) {
+  .story-card-content {
+    flex-direction: column;
+  }
+  
+  .story-image-container {
+    width: 100%;
+    height: 200px;
+    margin: 0;
+    border-radius: 0;
+  }
+  
+  .story-content {
+    padding: 20px;
+  }
 }
 
 .story-title {

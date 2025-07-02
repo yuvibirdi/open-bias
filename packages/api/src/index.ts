@@ -96,29 +96,14 @@ app.get("/sources", async (c) => {
 
     console.log(`Found ${sources.length} sources in database`);
 
-    // If no sources found in database, return fallback
-    if (sources.length === 0) {
-      console.log("No sources found in database, returning fallback data");
-      return c.json({ 
-        sources: [
-          { id: 1, name: "BBC News", rss: "http://feeds.bbci.co.uk/news/rss.xml", bias: 2 },
-          { id: 2, name: "CNN", rss: "http://rss.cnn.com/rss/edition.rss", bias: 1 },
-          { id: 3, name: "Fox News", rss: "http://feeds.foxnews.com/foxnews/latest", bias: 3 }
-        ]
-      });
-    }
-
     return c.json({ sources });
   } catch (error) {
     console.error("Sources endpoint error:", error);
-    // Fallback to hardcoded sources on error
     return c.json({ 
-      sources: [
-        { id: 1, name: "BBC News", rss: "http://feeds.bbci.co.uk/news/rss.xml", bias: 2 },
-        { id: 2, name: "CNN", rss: "http://rss.cnn.com/rss/edition.rss", bias: 1 },
-        { id: 3, name: "Fox News", rss: "http://feeds.foxnews.com/foxnews/latest", bias: 3 }
-      ]
-    });
+      error: "Failed to fetch sources from database",
+      details: String(error),
+      sources: []
+    }, 500);
   }
 });
 

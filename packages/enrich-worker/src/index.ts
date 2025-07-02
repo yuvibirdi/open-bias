@@ -1,7 +1,16 @@
+/**
+ * Enrich-Worker Main Entry Point
+ * ------------------------------
+ * Core functions:
+ * 1. Article grouping using optimized multi-stage algorithm
+ * 2. AI-powered bias analysis of grouped articles
+ * 3. Elasticsearch indexing of enriched articles
+ */
+
 import { Client, HttpConnection } from "@elastic/elasticsearch";
 import { db, articles, sources } from "@open-bias/db";
 import { eq, isNull, or, inArray } from "drizzle-orm";
-import { groupArticles } from "./grouper";
+import { groupArticles } from "./grouper-optimized";
 import { analyzeArticleGroups } from "./analyzer-unified";
 import { testAIConnectivity } from "./ai-analysis";
 
@@ -12,7 +21,7 @@ if (!esNode) {
   process.exit(1);
 }
 
-// Explicitly use Node.js built-in http
+// Elasticsearch client setup
 const es = new Client({
   node: esNode,
   Connection: HttpConnection,
@@ -22,43 +31,75 @@ const es = new Client({
   }
 });
 
+/**
+ * Main enrichment pipeline
+ */
 async function main() {
-  // Step 0: Test AI connectivity
-  console.log("--- Testing AI Connectivity ---");
+  console.log("🚀 Starting Enrich-Worker Pipeline...\n");
+
+  // Step 1: Test AI connectivity
+  console.log("🔍 Step 1: Testing AI Connectivity");
   const aiTest = await testAIConnectivity();
   if (aiTest.available) {
-    console.log(`✅ AI Provider: ${aiTest.provider.toUpperCase()} - Available`);
+    console.log(`✅ AI Provider: ${aiTest.provider.toUpperCase()} - Available\n`);
   } else {
     console.error(`❌ AI Provider: ${aiTest.provider.toUpperCase()} - Not Available`);
     console.error(`Error: ${aiTest.error}`);
-    console.log("⚠️ Proceeding without AI analysis...");
+    console.log("⚠️ Proceeding without AI analysis...\n");
   }
 
-  // Step 1: Group similar articles
-  console.log("--- Starting Article Grouping ---");
-  await groupArticles();
-  console.log("--- Finished Article Grouping ---");
+  // Step 2: Group similar articles using optimized multi-stage algorithm
+  console.log("🔗 Step 2: Article Grouping (Multi-Stage Algorithm)");
+  try {
+    await groupArticles({
+      maxTotalArticles: 0, // Process all available articles
+      maxArticlesPerSource: 50,
+      semanticThreshold: 0.3,
+      embeddingThreshold: 0.55,
+      llmThreshold: 0.75,
+      testMode: false,
+      verbose: false
+    });
+    console.log("✅ Article grouping completed\n");
+  } catch (error) {
+    console.error("❌ Article grouping failed:", error);
+    console.log("⚠️ Continuing with bias analysis and indexing...\n");
+  }
 
-  // Step 2: Analyze grouped articles for bias
-  console.log("--- Starting Bias Analysis ---");
+  // Step 3: Analyze grouped articles for bias
+  console.log("🧠 Step 3: AI Bias Analysis");
   if (aiTest.available) {
-    await analyzeArticleGroups();
+    try {
+      await analyzeArticleGroups();
+      console.log("✅ Bias analysis completed\n");
+    } catch (error) {
+      console.error("❌ Bias analysis failed:", error);
+      console.log("⚠️ Continuing with indexing...\n");
+    }
   } else {
-    console.log("⚠️ Skipping bias analysis - AI not available");
+    console.log("⚠️ Skipping bias analysis - AI not available\n");
   }
-  console.log("--- Finished Bias Analysis ---");
 
-  // Step 3: Index enriched articles into Elasticsearch
-  console.log("--- Starting Elasticsearch Indexing ---");
+  // Step 4: Index enriched articles into Elasticsearch
+  console.log("📊 Step 4: Elasticsearch Indexing");
+  await indexArticlesToElasticsearch();
+  
+  console.log("✅ Enrich-Worker pipeline completed successfully!");
+}
+
+/**
+ * Index enriched articles to Elasticsearch
+ */
+async function indexArticlesToElasticsearch() {
   const indexName = process.env.ELASTIC_INDEX ?? "articles";
-  console.log("Checking if index exists:", indexName);
+  console.log(`   Checking index: ${indexName}`);
 
   try {
+    // Ensure index exists with proper mapping
     const indexExists = await es.indices.exists({ index: indexName });
-    console.log("Index exists:", indexExists);
-
+    
     if (!indexExists) {
-      console.log("Creating index with new mapping...");
+      console.log("   Creating index with mapping...");
       await es.indices.create({
         index: indexName,
         mappings: {
@@ -73,78 +114,79 @@ async function main() {
             sourceName: { type: "keyword" },
             sourceBias: { type: "integer" },
             groupId: { type: "integer" },
-            // New mappings for analysis fields
+            // Analysis fields
             politicalLeaning: { type: "float" },
             sensationalism: { type: "float" },
             framingSummary: { type: "text", index: false },
           }
         }
       });
-      console.log("Index created with new mapping.");
+      console.log("   ✅ Index created");
     }
-  } catch (err: unknown) {
-    console.error("Error checking or creating Elasticsearch index:", err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
 
-  // Select articles that haven't been indexed yet
-  const batch = await db
-    .select({
-      id: articles.id,
-      title: articles.title,
-      link: articles.link,
-      summary: articles.summary,
-      imageUrl: articles.imageUrl,
-      bias: articles.bias, // Original simple bias
-      published: articles.published,
-      sourceId: articles.sourceId,
-      sourceName: sources.name,
-      sourceBias: sources.bias,
-      groupId: articles.groupId,
-      // New fields from analysis
-      politicalLeaning: articles.politicalLeaning,
-      sensationalism: articles.sensationalism,
-      framingSummary: articles.framingSummary,
-    })
-    .from(articles)
-    .leftJoin(sources, eq(articles.sourceId, sources.id))
-    .where(or(eq(articles.indexed, 0), isNull(articles.indexed)))
-    .limit(100);
+    // Get unindexed articles
+    const batch = await db
+      .select({
+        id: articles.id,
+        title: articles.title,
+        link: articles.link,
+        summary: articles.summary,
+        imageUrl: articles.imageUrl,
+        bias: articles.bias,
+        published: articles.published,
+        sourceId: articles.sourceId,
+        sourceName: sources.name,
+        sourceBias: sources.bias,
+        groupId: articles.groupId,
+        politicalLeaning: articles.politicalLeaning,
+        sensationalism: articles.sensationalism,
+        framingSummary: articles.framingSummary,
+      })
+      .from(articles)
+      .leftJoin(sources, eq(articles.sourceId, sources.id))
+      .where(or(eq(articles.indexed, 0), isNull(articles.indexed)))
+      .limit(100);
 
-  if (batch.length === 0) {
-    console.log("No new articles to index.");
-    return;
-  }
-  console.log("Batch size for indexing:", batch.length);
+    if (batch.length === 0) {
+      console.log("   ✅ No new articles to index");
+      return;
+    }
 
-  const operations = batch.flatMap((art) => {
-    if (!art.id) {
-        console.warn(`Article data is missing an ID (title: ${art.title || 'N/A'}). Skipping.`);
+    console.log(`   📥 Indexing ${batch.length} articles...`);
+
+    // Prepare bulk operations
+    const operations = batch.flatMap((article) => {
+      if (!article.id) {
+        console.warn(`   ⚠️ Article missing ID: ${article.title || 'N/A'}`);
         return [];
-    }
-    return [
-      { index: { _index: indexName, _id: art.id.toString() } },
-      {
-        title: art.title,
-        link: art.link,
-        summary: art.summary,
-        imageUrl: art.imageUrl,
-        bias: art.bias,
-        published: art.published ? new Date(art.published).toISOString() : new Date().toISOString(),
-        sourceId: art.sourceId,
-        sourceName: art.sourceName,
-        sourceBias: art.sourceBias,
-        groupId: art.groupId,
-        politicalLeaning: art.politicalLeaning ? parseFloat(art.politicalLeaning) : null,
-        sensationalism: art.sensationalism ? parseFloat(art.sensationalism) : null,
-        framingSummary: art.framingSummary
       }
-    ];
-  });
 
-  try {
+      return [
+        { index: { _index: indexName, _id: article.id.toString() } },
+        {
+          title: article.title,
+          link: article.link,
+          summary: article.summary,
+          imageUrl: article.imageUrl,
+          bias: article.bias,
+          published: article.published ? new Date(article.published).toISOString() : new Date().toISOString(),
+          sourceId: article.sourceId,
+          sourceName: article.sourceName,
+          sourceBias: article.sourceBias,
+          groupId: article.groupId,
+          politicalLeaning: article.politicalLeaning ? parseFloat(article.politicalLeaning) : null,
+          sensationalism: article.sensationalism ? parseFloat(article.sensationalism) : null,
+          framingSummary: article.framingSummary
+        }
+      ];
+    });
+
+    // Execute bulk indexing
     if (operations.length > 0) {
-      const bulkResponse = await es.bulk<{ index: { error?: unknown, status?: number, _id: string } }>({ refresh: true, operations });
+      const bulkResponse = await es.bulk<{ index: { error?: unknown, status?: number, _id: string } }>({ 
+        refresh: true, 
+        operations 
+      });
 
       const successfulIds: number[] = [];
       const erroredDocuments: unknown[] = [];
@@ -167,29 +209,27 @@ async function main() {
         }
       });
 
-      if (erroredDocuments.length > 0) {
-        console.error("Errors during Elasticsearch bulk indexing:", JSON.stringify(erroredDocuments, null, 2));
-      }
-
+      // Update database with successful indexing
       if (successfulIds.length > 0) {
         await db.update(articles)
           .set({ indexed: 1 })
           .where(inArray(articles.id, successfulIds));
-        console.log(`Successfully updated 'indexed' status for ${successfulIds.length} articles in the database.`);
+        console.log(`   ✅ Successfully indexed ${successfulIds.length} articles`);
       }
-      
-      if (erroredDocuments.length === 0) {
-        console.log(`Successfully indexed all ${operations.length / 2} articles.`);
+
+      if (erroredDocuments.length > 0) {
+        console.error(`   ❌ ${erroredDocuments.length} articles failed to index:`, 
+          JSON.stringify(erroredDocuments.slice(0, 3), null, 2));
       }
     }
-  } catch (err: unknown) {
-    console.error("Fatal error during Elasticsearch bulk indexing or DB update:", err instanceof Error ? err.message : String(err));
+
+  } catch (error) {
+    console.error("❌ Elasticsearch indexing failed:", error instanceof Error ? error.message : String(error));
+    throw error;
   }
-
-  console.log("Enrichment process completed.");
 }
-
-main().catch((err) => {
-  console.error("Fatal error in main execution:", err.message || err);
+// Execute main pipeline
+main().catch((error) => {
+  console.error("💥 Enrich-Worker fatal error:", error.message || error);
   process.exit(1);
 });

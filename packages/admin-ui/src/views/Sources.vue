@@ -50,14 +50,24 @@
               </CTableBody>
             </CTable>
 
-            <!-- Loading/Empty states -->
+            <!-- Loading/Empty/Error states -->
             <div v-if="loading" class="text-center p-4">
               <CSpinner />
               <p class="mt-2">Loading sources...</p>
             </div>
             
+            <div v-else-if="error" class="alert alert-danger" role="alert">
+              <h5>⚠️ Error Loading Sources</h5>
+              <p>{{ error }}</p>
+              <CButton color="primary" @click="loadSources" class="mt-2">
+                Retry
+              </CButton>
+            </div>
+            
             <div v-else-if="sources.length === 0" class="text-center p-4">
-              <p>No sources found.</p>
+              <h5>📄 No Sources Found</h5>
+              <p>No RSS sources are configured in the database.</p>
+              <p class="text-muted">Please seed the database or add sources manually.</p>
             </div>
           </CCardBody>
         </CCard>
@@ -114,24 +124,14 @@ const loadSources = async () => {
     const response = await getSources()
     sources.value = response.sources || []
     console.log('Loaded sources:', sources.value.length)
+    
+    if (sources.value.length === 0) {
+      error.value = 'No sources found in database. Please seed the database with sources.'
+    }
   } catch (err) {
     console.error('Failed to load sources:', err)
-    error.value = 'Failed to load sources from API'
-    // Fallback to mock data
-    sources.value = [
-      {
-        id: 1,
-        name: "Sample News",
-        rss: "https://samplenews.com/feed",
-        bias: 1
-      },
-      {
-        id: 2,
-        name: "Another News",
-        rss: "https://anothernews.com/feed", 
-        bias: 2
-      },
-    ]
+    error.value = `Failed to load sources from API: ${err}`
+    sources.value = []
   } finally {
     loading.value = false
   }
@@ -144,34 +144,23 @@ const addSource = async () => {
   }
 
   try {
-    // Mock add - would call API in real implementation
-    const id = Math.max(0, ...sources.value.map(s => s.id)) + 1
-    sources.value.push({
-      id,
-      name: newSource.value.name,
-      rss: newSource.value.rss,
-      bias: 2 // Default to center
-    })
-    
-    // Reset form
-    newSource.value = { name: '', rss: '' }
-    showAddModal.value = false
-    
-    console.log('Source added successfully')
+    // TODO: Implement actual API call for adding sources
+    console.error('❌ Add source API not implemented yet')
+    alert('Add source functionality not implemented. Please add sources directly to the database.')
   } catch (error) {
     console.error('Failed to add source:', error)
+    alert('Failed to add source: ' + error)
   }
 }
 
 const deleteSource = async (id: number) => {
-  if (!confirm('Are you sure you want to delete this source?')) return
-  
   try {
-    // Mock delete
-    sources.value = sources.value.filter(s => s.id !== id)
-    console.log(`Deleted source ${id}`)
+    // TODO: Implement actual API call for deleting sources
+    console.error('❌ Delete source API not implemented yet')
+    alert('Delete source functionality not implemented. Please remove sources directly from the database.')
   } catch (error) {
     console.error('Failed to delete source:', error)
+    alert('Failed to delete source: ' + error)
   }
 }
 

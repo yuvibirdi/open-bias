@@ -70,6 +70,17 @@
 
         <h1 class="text-3xl font-bold text-gray-900 mb-4">{{ story.title }}</h1>
         
+        <!-- Hero Image from first source with image -->
+        <div v-if="getHeroImage()" class="mb-6 rounded-xl overflow-hidden">
+          <img 
+            :src="getHeroImage()"
+            :alt="story.title"
+            class="w-full h-64 md:h-80 object-cover"
+            loading="eager"
+            @error="handleImageError"
+          />
+        </div>
+        
         <p class="text-xl text-gray-600 leading-relaxed mb-6">{{ story.summary }}</p>
 
         <!-- Bias analysis -->
@@ -97,37 +108,81 @@
       <!-- Coverage map -->
       <div class="mb-8">
         <h2 class="text-2xl font-bold text-gray-900 mb-4">Coverage Across Sources</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div 
             v-for="source in story.sources" 
             :key="source.id"
-            class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+            class="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
           >
-            <div class="flex items-center justify-between mb-2">
-              <h4 class="font-semibold text-gray-900">{{ source.name }}</h4>
-              <div class="flex items-center space-x-1">
-                <div class="w-8 h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    class="h-full transition-all duration-300"
-                    :class="getBiasColor(source.biasScore || 0)"
-                    :style="{ width: `${Math.abs(source.biasScore || 0) * 10}%` }"
-                  ></div>
+            <!-- Article Image -->
+            <div class="relative h-48 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
+              <img 
+                v-if="source.imageUrl" 
+                :src="source.imageUrl"
+                :alt="source.title"
+                class="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                @error="handleImageError"
+                loading="lazy"
+              />
+              <div 
+                v-else 
+                class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100"
+              >
+                <div class="text-center">
+                  <svg class="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+                  </svg>
+                  <p class="text-xs text-gray-500 font-medium">{{ source.name }}</p>
+                </div>
+              </div>
+              
+              <!-- Source bias indicator overlay -->
+              <div class="absolute top-3 right-3">
+                <div 
+                  class="px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm"
+                  :class="getBiasChipClasses(source.biasScore || 0)"
+                >
+                  {{ getBiasLabel(source.biasScore || 0) }}
                 </div>
               </div>
             </div>
-            <p class="text-sm text-gray-600 mb-3 line-clamp-3">{{ source.excerpt }}</p>
-            <div class="flex items-center justify-between">
-              <span class="text-xs text-gray-500">
-                {{ formatDate(source.publishedAt) }}
-              </span>
-              <a 
-                :href="source.url" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                class="text-xs text-blue-600 hover:text-blue-800 font-medium"
-              >
-                Read Original →
-              </a>
+
+            <!-- Article Content -->
+            <div class="p-5">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="font-semibold text-gray-900 text-sm line-clamp-2 leading-tight">
+                  {{ source.title }}
+                </h4>
+              </div>
+              
+              <p class="text-sm text-gray-600 mb-4 line-clamp-3 leading-relaxed">
+                {{ source.excerpt || source.summary }}
+              </p>
+              
+              <!-- Source info and actions -->
+              <div class="flex items-center justify-between border-t border-gray-100 pt-3">
+                <div class="flex items-center space-x-2">
+                  <div class="w-6 h-6 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                    <span class="text-xs font-bold text-white">{{ source.name.charAt(0) }}</span>
+                  </div>
+                  <div>
+                    <p class="text-xs font-medium text-gray-900">{{ source.name }}</p>
+                    <p class="text-xs text-gray-500">{{ formatDate(source.publishedAt) }}</p>
+                  </div>
+                </div>
+                
+                <a 
+                  :href="source.url" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-full hover:bg-blue-100 transition-colors"
+                >
+                  Read
+                  <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                  </svg>
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -493,16 +548,98 @@ const getBiasColor = (score: number) => {
   return 'bg-green-500'
 }
 
+const handleImageError = (event: Event) => {
+  const img = event.target as HTMLImageElement
+  img.style.display = 'none'
+}
+
+const getBiasLabel = (score: number) => {
+  if (score > 2) return 'Right'
+  if (score > 0.5) return 'Lean Right'
+  if (score < -2) return 'Left'
+  if (score < -0.5) return 'Lean Left'
+  return 'Center'
+}
+
+const getBiasChipClasses = (score: number) => {
+  if (score > 2) return 'bg-red-500/90 text-white'
+  if (score > 0.5) return 'bg-red-300/90 text-red-900'
+  if (score < -2) return 'bg-blue-500/90 text-white'
+  if (score < -0.5) return 'bg-blue-300/90 text-blue-900'
+  return 'bg-green-500/90 text-white'
+}
+
+const getHeroImage = () => {
+  if (!story.value?.sources) return null
+  const sourceWithImage = story.value.sources.find(source => source.imageUrl)
+  return sourceWithImage?.imageUrl || null
+}
+
 onMounted(() => {
   loadStory()
 })
 </script>
 
 <style scoped>
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .line-clamp-3 {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Beautiful card hover effects */
+.bg-white:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Smooth image transitions */
+img {
+  transition: transform 0.3s ease, filter 0.3s ease;
+}
+
+img:hover {
+  filter: brightness(1.05);
+}
+
+/* Enhanced gradient backgrounds */
+.bg-gradient-to-br {
+  background-size: 200% 200%;
+  animation: gradient-shift 6s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Backdrop blur support for bias chips */
+.backdrop-blur-sm {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* Enhanced button styles */
+.inline-flex:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+/* Card loading animation */
+@keyframes pulse-card {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.animate-pulse-card {
+  animation: pulse-card 2s ease-in-out infinite;
 }
 </style>

@@ -6,7 +6,7 @@
  * This script provides commands to manage the enhanced story ingestion system:
  * - Seed expanded news sources
  * - Run enhanced ingestion (single or scheduled)
- * - Cleanup unhealthy story groups
+ * - Run grouping and analysis via enrich-worker
  * - Monitor system health
  */
 
@@ -20,6 +20,8 @@ import {
 } from './src/enhanced-ingest';
 import { db, sources, articles, articleGroups, storyCoverage } from '@open-bias/db';
 import { count, sql, desc, eq } from 'drizzle-orm';
+import { spawn } from 'child_process';
+import path from 'path';
 
 const program = new Command();
 
@@ -57,6 +59,90 @@ program
       console.log('✅ Enhanced ingestion completed successfully!');
     } catch (error) {
       console.error('❌ Ingestion failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Run grouping and analysis via enrich-worker
+program
+  .command('enrich')
+  .description('Run article grouping and analysis via enrich-worker')
+  .option('-m, --max-articles <number>', 'Maximum articles to process (-1 for all)', '-1')
+  .option('-s, --max-per-source <number>', 'Maximum articles per source', '50')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(async (options) => {
+    try {
+      console.log('🧠 Starting enrichment (grouping and analysis)...');
+      
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      const enrichProcess = spawn('bun', [enrichWorkerPath], {
+        stdio: 'inherit',
+        cwd: path.join(process.cwd(), '..', 'enrich-worker')
+      });
+
+      enrichProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log('✅ Enrichment completed successfully!');
+        } else {
+          console.error(`❌ Enrichment failed with code ${code}`);
+          process.exit(1);
+        }
+      });
+
+      enrichProcess.on('error', (error) => {
+        console.error('❌ Failed to start enrichment process:', error);
+        process.exit(1);
+      });
+
+    } catch (error) {
+      console.error('❌ Enrichment failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Run full pipeline: ingest + enrich
+program
+  .command('full')
+  .description('Run full pipeline: ingestion followed by enrichment')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(async (options) => {
+    try {
+      console.log('🚀 Starting full pipeline...');
+      
+      // Step 1: Ingestion
+      console.log('\n📥 Step 1: Enhanced Ingestion');
+      await runEnhancedIngestion();
+      console.log('✅ Ingestion completed');
+      
+      // Step 2: Enrichment
+      console.log('\n🧠 Step 2: Enrichment (Grouping & Analysis)');
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      await new Promise<void>((resolve, reject) => {
+        const enrichProcess = spawn('bun', [enrichWorkerPath], {
+          stdio: 'inherit',
+          cwd: path.join(process.cwd(), '..', 'enrich-worker')
+        });
+
+        enrichProcess.on('close', (code) => {
+          if (code === 0) {
+            console.log('✅ Enrichment completed');
+            resolve();
+          } else {
+            reject(new Error(`Enrichment failed with code ${code}`));
+          }
+        });
+
+        enrichProcess.on('error', (error) => {
+          reject(error);
+        });
+      });
+      
+      console.log('\n🎉 Full pipeline completed successfully!');
+      
+    } catch (error) {
+      console.error('❌ Full pipeline failed:', error);
       process.exit(1);
     }
   });
@@ -201,7 +287,7 @@ program
 // Initialize full system
 program
   .command('init')
-  .description('Initialize the system: seed sources and run first ingestion')
+  .description('Initialize the system: seed sources and run full pipeline')
   .action(async () => {
     try {
       console.log('🚀 Initializing enhanced ingestion system...');
@@ -212,14 +298,33 @@ program
       console.log('\n2️⃣ Running initial ingestion...');
       await runEnhancedIngestion();
       
-      console.log('\n3️⃣ Cleaning up...');
-      await cleanupUnhealthyGroups();
+      console.log('\n3️⃣ Running enrichment (grouping & analysis)...');
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      await new Promise<void>((resolve, reject) => {
+        const enrichProcess = spawn('bun', [enrichWorkerPath], {
+          stdio: 'inherit',
+          cwd: path.join(process.cwd(), '..', 'enrich-worker')
+        });
+
+        enrichProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Enrichment failed with code ${code}`));
+          }
+        });
+
+        enrichProcess.on('error', (error) => {
+          reject(error);
+        });
+      });
       
       console.log('\n✨ System initialization completed!');
       console.log('\n📋 Next steps:');
       console.log('   • Run "bun ingest-manager.ts status" to check system health');
       console.log('   • Run "bun ingest-manager.ts schedule" to start automated ingestion');
-      console.log('   • Run "bun ingest-manager.ts ingest" for manual ingestion cycles');
+      console.log('   • Run "bun ingest-manager.ts full" for manual full pipeline runs');
       
     } catch (error) {
       console.error('❌ System initialization failed:', error);

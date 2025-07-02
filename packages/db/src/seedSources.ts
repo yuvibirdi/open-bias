@@ -64,6 +64,10 @@ const initialSources: Omit<InsertSource, 'id' | 'fetchedAt'>[] = [
   }
 ];
 
+export async function seedSources() {
+  return await seedDatabase();
+}
+
 async function seedDatabase() {
   console.log('Starting source seeding and article bias correction process...');
 
