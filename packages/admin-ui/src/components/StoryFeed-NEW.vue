@@ -157,6 +157,13 @@
         </button>
       </div>
     </div>
+
+    <!-- Story Detail Modal -->
+    <StoryDetailModal 
+      v-if="selectedStoryId" 
+      :story-id="selectedStoryId"
+      @close="closeStoryModal"
+    />
   </div>
 </template>
 
@@ -164,6 +171,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import StoryDetailModal from './StoryDetailModal.vue'
 
 // Props
 const props = defineProps<{
@@ -203,6 +211,7 @@ const loading = ref(false)
 const selectedTimeframe = ref(props.timeframe || '24h')
 const selectedCoverage = ref(props.coverageFilter || '')
 const searchQuery = ref(props.searchQuery || '')
+const selectedStoryId = ref<number | null>(null)
 const hasMore = ref(true)
 const currentPage = ref(1)
 
@@ -289,7 +298,12 @@ const loadMoreStories = async () => {
 }
 
 const navigateToStory = (story: Story) => {
-  router.push(`/story/${story.id}`)
+  selectedStoryId.value = story.id
+  emit('storySelected', story)
+}
+
+const closeStoryModal = () => {
+  selectedStoryId.value = null
 }
 
 const formatTimestamp = (timestamp: Date | null) => {

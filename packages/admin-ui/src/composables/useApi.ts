@@ -66,7 +66,15 @@ export function useApi() {
     })
   }
 
-  return { get, post, put, delete: del }
+  return { get, post, put, delete: del, fetchStoryById, analyzeStory }
+}
+
+export async function fetchStoryById(storyId: number) {
+  return api(`/api/stories/${storyId}`)
+}
+
+export async function analyzeStory(storyId: number) {
+  return api(`/api/stories/${storyId}/analyze`, { method: 'POST' })
 }
 
 export async function getArticles(params?: { limit?: number; bias?: number }): Promise<{ articles: Article[] }> {

@@ -31,6 +31,16 @@ app.get("/api/stories/trending", async (c) => {
         firstReported: sql<Date>`MIN(${articles.published})`,
         lastUpdated: sql<Date>`MAX(${articles.published})`,
         mostUnbiasedArticleId: articleGroups.mostUnbiasedArticleId,
+        // Get the first available image from any article in the group
+        imageUrl: sql<string>`(
+          SELECT ${articles.imageUrl} 
+          FROM ${articles} 
+          WHERE ${articles.groupId} = ${articleGroups.id} 
+            AND ${articles.imageUrl} IS NOT NULL 
+            AND ${articles.imageUrl} != '' 
+            AND ${articles.imageUrl} != 'null'
+          LIMIT 1
+        )`,
       })
       .from(articleGroups)
       .innerJoin(articles, eq(articles.groupId, articleGroups.id))
@@ -344,12 +354,22 @@ app.get("/api/stories/search", async (c) => {
     }
 
     // Convert to array and add coverage scores
-    const stories = Array.from(storiesMap.values()).map(story => ({
-      ...story,
-      totalArticles: story.articles.length,
-      coverageScore: Math.round((story.biases.size / 3) * 100),
-      biases: Array.from(story.biases),
-    }));
+    const stories = Array.from(storiesMap.values()).map(story => {
+      // Find first article with a valid image
+      const imageUrl = story.articles.find((article: any) => 
+        article.imageUrl && 
+        article.imageUrl.trim() && 
+        article.imageUrl !== 'null'
+      )?.imageUrl || null;
+
+      return {
+        ...story,
+        totalArticles: story.articles.length,
+        coverageScore: Math.round((story.biases.size / 3) * 100),
+        biases: Array.from(story.biases),
+        imageUrl: imageUrl,
+      };
+    });
 
     // Apply coverage filter
     let filteredStories = stories;
@@ -446,6 +466,125 @@ app.post("/api/stories/group-articles", async (c) => {
     return c.json({ error: "Failed to group articles" }, 500);
   }
 });
+
+// Analyze story for detailed insights
+app.post("/api/stories/:id/analyze", async (c) => {
+  try {
+    const storyId = Number(c.req.param('id'));
+    
+    // Get story and articles
+    const story = await db.query.articleGroups.findFirst({
+      where: eq(articleGroups.id, storyId),
+    });
+
+    if (!story) {
+      return c.json({ error: "Story not found" }, 404);
+    }
+
+    const storyArticles = await db
+      .select({
+        title: articles.title,
+        summary: articles.summary,
+        sourceName: sources.name,
+        sourceBias: sources.bias,
+        politicalLeaning: articles.politicalLeaning,
+        sensationalism: articles.sensationalism,
+        framingSummary: articles.framingSummary,
+      })
+      .from(articles)
+      .innerJoin(sources, eq(articles.sourceId, sources.id))
+      .where(eq(articles.groupId, storyId));
+
+    // Generate comprehensive analysis
+    const analysisText = generateStoryAnalysis(story, storyArticles);
+
+    return c.json({
+      analysis: analysisText,
+      storyId,
+      analysisTimestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Error analyzing story:", error);
+    return c.json({ error: "Failed to analyze story" }, 500);
+  }
+});
+
+// Helper function to generate detailed story analysis
+function generateStoryAnalysis(story: any, storyArticles: any[]): string {
+  const biasDistribution = storyArticles.reduce((acc, article) => {
+    const bias = article.sourceBias || 'unknown';
+    acc[bias] = (acc[bias] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const totalArticles = storyArticles.length;
+  const perspectives = Object.keys(biasDistribution).filter(k => k !== 'unknown').length;
+  const coverageScore = Math.round((perspectives / 3) * 100);
+
+  const avgPoliticalLeaning = storyArticles
+    .filter(a => a.politicalLeaning !== null)
+    .reduce((sum, a) => sum + parseFloat(a.politicalLeaning), 0) / storyArticles.filter(a => a.politicalLeaning !== null).length;
+
+  const avgSensationalism = storyArticles
+    .filter(a => a.sensationalism !== null)
+    .reduce((sum, a) => sum + parseFloat(a.sensationalism), 0) / storyArticles.filter(a => a.sensationalism !== null).length;
+
+  let analysis = `## Comprehensive Analysis: ${story.name}\n\n`;
+  
+  analysis += `This story has been covered by ${totalArticles} sources across ${perspectives} political perspectives, `;
+  analysis += `achieving a coverage score of ${coverageScore}%. `;
+  
+  if (coverageScore === 100) {
+    analysis += `This represents excellent cross-spectrum coverage, providing readers with comprehensive viewpoints from left, center, and right-leaning sources.\n\n`;
+  } else if (coverageScore >= 67) {
+    analysis += `This provides good coverage across political perspectives, though one viewpoint may be underrepresented.\n\n`;
+  } else {
+    analysis += `This story shows limited perspective diversity, potentially creating blindspots in coverage.\n\n`;
+  }
+
+  // Bias analysis
+  if (!isNaN(avgPoliticalLeaning)) {
+    analysis += `### Political Leaning Analysis\n`;
+    if (avgPoliticalLeaning > 0.3) {
+      analysis += `The overall coverage leans conservative (${avgPoliticalLeaning.toFixed(2)}), with sources generally framing the story in ways that align with right-leaning perspectives.\n\n`;
+    } else if (avgPoliticalLeaning < -0.3) {
+      analysis += `The overall coverage leans liberal (${avgPoliticalLeaning.toFixed(2)}), with sources generally framing the story in ways that align with left-leaning perspectives.\n\n`;
+    } else {
+      analysis += `The overall coverage appears relatively balanced (${avgPoliticalLeaning.toFixed(2)}), with sources providing centrist framing of the events.\n\n`;
+    }
+  }
+
+  // Sensationalism analysis
+  if (!isNaN(avgSensationalism)) {
+    analysis += `### Sensationalism Assessment\n`;
+    const sensationalismPercent = Math.round(avgSensationalism * 100);
+    if (sensationalismPercent > 70) {
+      analysis += `Coverage shows high sensationalism (${sensationalismPercent}%), with sources using emotionally charged language and dramatic framing.\n\n`;
+    } else if (sensationalismPercent > 40) {
+      analysis += `Coverage shows moderate sensationalism (${sensationalismPercent}%), balancing engaging presentation with factual reporting.\n\n`;
+    } else {
+      analysis += `Coverage maintains low sensationalism (${sensationalismPercent}%), focusing on factual presentation over emotional engagement.\n\n`;
+    }
+  }
+
+  // Source distribution
+  analysis += `### Source Distribution\n`;
+  Object.entries(biasDistribution).forEach(([bias, count]) => {
+    if (bias !== 'unknown') {
+      const percentage = Math.round(((count as number) / totalArticles) * 100);
+      analysis += `- ${bias.charAt(0).toUpperCase() + bias.slice(1)}: ${count} sources (${percentage}%)\n`;
+    }
+  });
+
+  analysis += `\n### Key Insights\n`;
+  analysis += `Based on the analysis of coverage patterns, this story represents a significant news event that has captured attention across the political spectrum. `;
+  analysis += `The distribution of sources and their framing approaches provides insight into how different audiences might perceive and understand these developments.\n\n`;
+  
+  analysis += `Readers are encouraged to consider multiple perspectives when forming their understanding of this story, `;
+  analysis += `particularly noting how different sources emphasize various aspects of the underlying events.`;
+
+  return analysis;
+}
 
 // Helper function to calculate text similarity
 function calculateTextSimilarity(text1: string, text2: string): number {

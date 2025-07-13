@@ -151,30 +151,37 @@
       </div>
 
       <!-- Load More Button -->
-      <div v-if="hasMore" class="load-more-container">
+      <div v-if="hasMore" class="load-more-section">
         <button @click="loadMoreStories" :disabled="loading" class="load-more-btn">
-          {{ loading ? 'Loading...' : 'Load More Stories' }}
+          Load More Stories
         </button>
       </div>
     </div>
+
+    <!-- Story Detail Modal -->
+    <StoryDetailModal 
+      v-if="selectedStoryId" 
+      :story-id="selectedStoryId"
+      @close="selectedStoryId = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import StoryDetailModal from '@/components/StoryDetailModal.vue'
 
 // Props
 const props = defineProps<{
+  searchQuery?: string
   timeframe?: string
   coverageFilter?: string
-  searchQuery?: string
 }>()
 
 // Emits
 const emit = defineEmits<{
-  storySelected: [story: Story]
   storyAnalyzed: [story: Story]
 }>()
 
@@ -203,6 +210,7 @@ const loading = ref(false)
 const selectedTimeframe = ref(props.timeframe || '24h')
 const selectedCoverage = ref(props.coverageFilter || '')
 const searchQuery = ref(props.searchQuery || '')
+const selectedStoryId = ref<number | null>(null)
 const hasMore = ref(true)
 const currentPage = ref(1)
 
@@ -271,10 +279,12 @@ const loadStories = async (reset = true) => {
       stories.value.push(...(response.stories || []))
     }
     
+    console.log('Stories set to:', stories.value)
     hasMore.value = (response.stories || []).length === 20
-    
   } catch (error) {
-    console.error('Error loading stories:', error)
+    console.error('Failed to load stories:', error)
+    // Show error to user instead of mock data
+    stories.value = []
   } finally {
     loading.value = false
   }
@@ -285,29 +295,49 @@ const searchStories = async () => {
 }
 
 const loadMoreStories = async () => {
+  currentPage.value++
   await loadStories(false)
 }
 
 const navigateToStory = (story: Story) => {
+  // Navigate to individual story page
   router.push(`/story/${story.id}`)
 }
 
-const formatTimestamp = (timestamp: Date | null) => {
-  if (!timestamp) return 'Unknown'
+const getCoverageBadgeClass = (score: number) => {
+  if (score >= 100) return 'coverage-full'
+  if (score >= 67) return 'coverage-good'
+  if (score >= 33) return 'coverage-partial'
+  return 'coverage-limited'
+}
+
+const getCoverageText = (score: number) => {
+  if (score >= 100) return 'Full Coverage'
+  if (score >= 67) return 'Good Coverage'
+  if (score >= 33) return 'Partial Coverage'
+  return 'Limited Coverage'
+}
+
+const getBiasPercentage = (story: Story, bias: 'left' | 'center' | 'right') => {
+  const total = story.leftCoverage + story.centerCoverage + story.rightCoverage
+  if (total === 0) return 0
   
+  const count = bias === 'left' ? story.leftCoverage : 
+                bias === 'center' ? story.centerCoverage : 
+                story.rightCoverage
+  
+  return Math.round((count / total) * 100)
+}
+
+const formatTimestamp = (timestamp: Date | null) => {
+  if (!timestamp) return ''
   const date = new Date(timestamp)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
   
-  if (diffHours < 1) {
-    const diffMinutes = Math.floor(diffMs / (1000 * 60))
-    return `${diffMinutes}m ago`
-  }
-  
-  if (diffHours < 24) {
-    return `${diffHours}h ago`
-  }
+  if (diffHours < 1) return 'Just now'
+  if (diffHours < 24) return `${diffHours}h ago`
   
   const diffDays = Math.floor(diffHours / 24)
   return `${diffDays}d ago`
@@ -335,30 +365,6 @@ const handleImageError = (event: Event) => {
   }
 }
 
-const getCoverageBadgeClass = (score: number) => {
-  if (score >= 100) return 'full'
-  if (score >= 50) return 'partial'
-  return 'limited'
-}
-
-const getCoverageText = (score: number) => {
-  if (score >= 100) return 'Full Coverage'
-  if (score >= 50) return 'Partial Coverage'
-  return 'Limited Coverage'
-}
-
-const getBiasPercentage = (story: Story, bias: 'left' | 'center' | 'right') => {
-  const total = story.leftCoverage + story.centerCoverage + story.rightCoverage
-  if (total === 0) return 0
-  
-  switch (bias) {
-    case 'left': return (story.leftCoverage / total) * 100
-    case 'center': return (story.centerCoverage / total) * 100
-    case 'right': return (story.rightCoverage / total) * 100
-    default: return 0
-  }
-}
-
 // Lifecycle
 onMounted(() => {
   console.log('StoryFeed mounted, props:', props)
@@ -372,33 +378,25 @@ onMounted(() => {
 .story-feed {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
-  min-height: 100vh;
+  padding: 20px;
 }
 
 .header-section {
-  margin-bottom: 32px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 30px;
 }
 
 .feed-title {
   font-size: 2.5rem;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 24px;
-  text-align: center;
+  font-weight: bold;
+  color: #1a1a1a;
+  margin-bottom: 20px;
 }
 
 .feed-controls {
   display: flex;
-  gap: 24px;
+  gap: 20px;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: center;
-  background: #f9fafb;
-  padding: 20px;
-  border-radius: 12px;
 }
 
 .timeframe-selector,
@@ -411,64 +409,56 @@ onMounted(() => {
 .timeframe-selector label,
 .coverage-filter label {
   font-weight: 500;
-  color: #374151;
-  white-space: nowrap;
+  color: #666;
 }
 
 .timeframe-selector select,
 .coverage-filter select {
   padding: 8px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid #ddd;
   border-radius: 6px;
   background: white;
-  font-size: 14px;
-  min-width: 140px;
 }
 
 .search-box {
   display: flex;
   gap: 8px;
-  align-items: center;
 }
 
 .search-box input {
-  padding: 8px 16px;
-  border: 1px solid #d1d5db;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 14px;
-  min-width: 200px;
+  min-width: 250px;
 }
 
 .search-btn {
   padding: 8px 16px;
-  background: #2563eb;
+  background: #0066cc;
   color: white;
   border: none;
   border-radius: 6px;
-  font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s;
+  font-weight: 500;
 }
 
 .search-btn:hover {
-  background: #1d4ed8;
+  background: #0052a3;
 }
 
-.loading-state,
-.empty-state {
+.loading-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 80px 20px;
-  color: #6b7280;
-  text-align: center;
+  padding: 60px 20px;
+  color: #666;
 }
 
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #f3f4f6;
-  border-top: 3px solid #2563eb;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #0066cc;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 16px;
@@ -482,136 +472,135 @@ onMounted(() => {
 .stories-container {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 0 8px;
+  gap: 20px;
 }
 
 .story-card {
   background: white;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #e0e0e0;
   border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .story-card:hover {
-  border-color: #2563eb;
-  box-shadow: 0 10px 25px rgba(37, 99, 235, 0.15);
-  transform: translateY(-2px);
+  border-color: #0066cc;
+  box-shadow: 0 8px 25px rgba(0, 102, 204, 0.15);
+  transform: translateY(-4px);
 }
 
 .story-card-content {
   display: flex;
-  gap: 20px;
+  gap: 16px;
   align-items: flex-start;
-  padding: 24px;
 }
 
 .story-image-container {
   flex-shrink: 0;
-  width: 160px;
-  height: 120px;
-  border-radius: 12px;
+  width: 120px;
+  height: 90px;
+  border-radius: 8px;
   overflow: hidden;
-  background: #f3f4f6;
+  background: #f8fafc;
 }
 
 .story-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s ease;
+  transition: transform 0.2s ease;
 }
 
 .story-image:hover {
-  transform: scale(1.05);
+  transform: scale(1.02);
 }
 
 .story-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: 0; /* Allow text truncation */
 }
 
 .story-header {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 768px) {
+  .story-card-content {
+    gap: 12px;
+  }
+  
+  .story-image-container {
+    width: 100px;
+    height: 75px;
+  }
+  
+  .story-content {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .story-card-content {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .story-image-container {
+    width: 100%;
+    height: 180px;
+    border-radius: 8px;
+  }
 }
 
 .story-title {
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   font-weight: 600;
-  color: #111827;
-  margin-bottom: 12px;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+  line-height: 1.3;
 }
 
 .story-meta {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
-  font-size: 0.875rem;
-  color: #6b7280;
-  flex-wrap: wrap;
-}
-
-.article-count {
-  font-weight: 500;
-  color: #374151;
+  font-size: 0.9rem;
+  color: #666;
 }
 
 .coverage-badge {
   padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
 }
 
-.coverage-badge.full {
-  background: #dcfce7;
-  color: #166534;
+.coverage-full {
+  background: #e8f5e8;
+  color: #2d5a2d;
 }
 
-.coverage-badge.partial {
-  background: #fef3c7;
-  color: #92400e;
+.coverage-good {
+  background: #fff4e6;
+  color: #8b5a00;
 }
 
-.coverage-badge.limited {
-  background: #fee2e2;
-  color: #991b1b;
+.coverage-partial {
+  background: #fff0f0;
+  color: #a04040;
 }
 
-.timestamp {
-  color: #9ca3af;
-}
-
-.story-summary {
-  margin-bottom: 20px;
-  color: #4b5563;
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.coverage-limited {
+  background: #f0f0f0;
+  color: #666;
 }
 
 .coverage-visualization {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.bias-distribution {
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
 
 .bias-bar {
@@ -619,79 +608,96 @@ onMounted(() => {
   height: 8px;
   border-radius: 4px;
   overflow: hidden;
-  background: #f3f4f6;
+  margin-bottom: 8px;
+  background: #f0f0f0;
 }
 
 .bias-segment {
-  height: 100%;
-  transition: all 0.3s ease;
+  transition: width 0.3s ease;
 }
 
 .bias-segment.left {
-  background: #3b82f6;
+  background: #4a90e2;
 }
 
 .bias-segment.center {
-  background: #8b5cf6;
+  background: #9b59b6;
 }
 
 .bias-segment.right {
-  background: #ef4444;
+  background: #e74c3c;
 }
 
 .coverage-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: #6b7280;
+  font-size: 0.8rem;
+  color: #666;
 }
 
-.left-label,
-.center-label,
-.right-label {
-  font-weight: 500;
+.story-summary p {
+  color: #444;
+  line-height: 1.5;
+  margin: 0;
 }
 
 .blindspot-alert {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 16px;
-  padding: 12px;
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  color: #92400e;
-  font-weight: 500;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: #856404;
 }
 
-.load-more-container {
-  display: flex;
-  justify-content: center;
-  margin-top: 32px;
+.load-more-section {
+  text-align: center;
+  padding: 20px;
 }
 
 .load-more-btn {
   padding: 12px 24px;
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 500;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  font-weight: 500;
+  transition: all 0.2s ease;
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: #e9ecef;
 }
 
 .load-more-btn:disabled {
-  background: #9ca3af;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
+@media (max-width: 768px) {
+  .feed-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-box {
+    flex-direction: column;
+  }
+  
+  .search-box input {
+    min-width: auto;
+  }
+  
+  .coverage-labels {
+    font-size: 0.7rem;
+  }
+}
+
+/* Empty State Styles */
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
@@ -708,97 +714,10 @@ onMounted(() => {
 .empty-state code {
   font-family: 'Monaco', 'Consolas', monospace;
   font-size: 0.875rem;
-  background: #f3f4f6;
-  padding: 2px 6px;
-  border-radius: 4px;
 }
 
 .empty-state ul {
   max-width: 400px;
   margin: 0 auto;
-  list-style: none;
-  padding: 0;
-}
-
-.empty-state button {
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.empty-state button:hover:not(:disabled) {
-  background: #1d4ed8;
-}
-
-.empty-state button:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-}
-
-@media (max-width: 768px) {
-  .story-feed {
-    padding: 16px;
-  }
-  
-  .feed-title {
-    font-size: 2rem;
-  }
-  
-  .feed-controls {
-    flex-direction: column;
-    gap: 16px;
-    text-align: center;
-  }
-  
-  .search-box {
-    flex-direction: column;
-    width: 100%;
-  }
-  
-  .search-box input {
-    min-width: auto;
-    width: 100%;
-  }
-  
-  .story-card-content {
-    flex-direction: column;
-    gap: 16px;
-    padding: 20px;
-  }
-  
-  .story-image-container {
-    width: 100%;
-    height: 200px;
-  }
-  
-  .story-title {
-    font-size: 1.25rem;
-  }
-  
-  .story-meta {
-    justify-content: center;
-  }
-}
-
-@media (max-width: 480px) {
-  .story-feed {
-    padding: 12px;
-  }
-  
-  .feed-controls {
-    padding: 16px;
-  }
-  
-  .story-card-content {
-    padding: 16px;
-  }
-  
-  .coverage-labels {
-    font-size: 0.7rem;
-  }
 }
 </style>

@@ -16,6 +16,12 @@ const routes = [
         component: () => import('../views/Stories.vue'),
       },
       {
+        path: 'story/:id',
+        name: 'StoryDetail',
+        component: () => import('../views/StoryDetail.vue'),
+        props: true,
+      },
+      {
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('../views/Dashboard.vue'),

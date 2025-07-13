@@ -115,6 +115,7 @@ async function main() {
   await indexArticlesToElasticsearch();
   
   console.log("✅ Enrich-Worker pipeline completed successfully!");
+  process.exit(0);
 }
 
 /**
@@ -138,11 +139,11 @@ async function indexArticlesToElasticsearch() {
             link: { type: "keyword" },
             summary: { type: "text" },
             imageUrl: { type: "keyword", index: false },
-            bias: { type: "integer" },
+            bias: { type: "keyword" }, // Changed from integer to keyword for enum values
             published: { type: "date" },
             sourceId: { type: "integer" },
             sourceName: { type: "keyword" },
-            sourceBias: { type: "integer" },
+            sourceBias: { type: "keyword" }, // Changed from integer to keyword for enum values
             groupId: { type: "integer" },
             // Analysis fields
             politicalLeaning: { type: "float" },

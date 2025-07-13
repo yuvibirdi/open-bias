@@ -13,11 +13,10 @@
 import { Command } from 'commander';
 import { seedExpandedSources } from '@open-bias/db';
 import { 
-  runEnhancedIngestion, 
-  IngestScheduler, 
-  cleanupUnhealthyGroups,
-  ENHANCED_CONFIG 
-} from './src/enhanced-ingest';
+  runSimpleIngestion, 
+  SimpleIngestScheduler, 
+  INGEST_CONFIG 
+} from './src/simple-ingest';
 import { db, sources, articles, articleGroups, storyCoverage } from '@open-bias/db';
 import { count, sql, desc, eq } from 'drizzle-orm';
 import { spawn } from 'child_process';
@@ -27,7 +26,7 @@ const program = new Command();
 
 program
   .name('ingest-manager')
-  .description('Enhanced story ingestion management CLI')
+  .description('Streamlined story ingestion management CLI')
   .version('2.0.0');
 
 // Seed expanded sources
@@ -48,15 +47,16 @@ program
 // Run single ingestion
 program
   .command('ingest')
-  .description('Run a single enhanced ingestion cycle')
+  .description('Run a single simple ingestion cycle (fetch articles only)')
   .option('-v, --verbose', 'Enable verbose logging')
   .action(async (options) => {
     try {
       if (options.verbose) {
-        console.log('🚀 Starting enhanced ingestion with verbose logging...');
+        console.log('🚀 Starting simple ingestion with verbose logging...');
       }
-      await runEnhancedIngestion();
-      console.log('✅ Enhanced ingestion completed successfully!');
+      await runSimpleIngestion();
+      console.log('✅ Simple ingestion completed successfully!');
+      console.log('💡 Run "bun ingest-manager.ts enrich" to group articles and perform analysis');
     } catch (error) {
       console.error('❌ Ingestion failed:', error);
       process.exit(1);
@@ -110,9 +110,9 @@ program
     try {
       console.log('🚀 Starting full pipeline...');
       
-      // Step 1: Ingestion
-      console.log('\n📥 Step 1: Enhanced Ingestion');
-      await runEnhancedIngestion();
+      // Step 1: Simple Ingestion
+      console.log('\n📥 Step 1: Simple Ingestion (fetch articles)');
+      await runSimpleIngestion();
       console.log('✅ Ingestion completed');
       
       // Step 2: Enrichment
@@ -161,11 +161,8 @@ program
 
     console.log(`⏰ Starting scheduled ingestion every ${interval} minutes...`);
     
-    // Update config
-    (ENHANCED_CONFIG as any).FETCH_INTERVAL = interval;
-    
-    const scheduler = new IngestScheduler();
-    scheduler.start();
+    const scheduler = new SimpleIngestScheduler();
+    scheduler.start(interval);
 
     // Handle graceful shutdown
     process.on('SIGINT', () => {
@@ -184,15 +181,34 @@ program
     await new Promise(() => {});
   });
 
-// Cleanup unhealthy groups
+// Cleanup command - now handled by enrich-worker
 program
   .command('cleanup')
-  .description('Clean up unhealthy story groups')
+  .description('Run cleanup via enrich-worker (grouping, analysis, and cleanup)')
   .action(async () => {
     try {
-      console.log('🧹 Starting cleanup...');
-      await cleanupUnhealthyGroups();
-      console.log('✅ Cleanup completed successfully!');
+      console.log('🧹 Running cleanup via enrich-worker...');
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      await new Promise<void>((resolve, reject) => {
+        const enrichProcess = spawn('bun', [enrichWorkerPath], {
+          stdio: 'inherit',
+          cwd: path.join(process.cwd(), '..', 'enrich-worker')
+        });
+
+        enrichProcess.on('close', (code) => {
+          if (code === 0) {
+            console.log('✅ Cleanup completed successfully!');
+            resolve();
+          } else {
+            reject(new Error(`Cleanup failed with code ${code}`));
+          }
+        });
+
+        enrichProcess.on('error', (error) => {
+          reject(error);
+        });
+      });
     } catch (error) {
       console.error('❌ Cleanup failed:', error);
       process.exit(1);
@@ -290,13 +306,13 @@ program
   .description('Initialize the system: seed sources and run full pipeline')
   .action(async () => {
     try {
-      console.log('🚀 Initializing enhanced ingestion system...');
+      console.log('🚀 Initializing streamlined ingestion system...');
       
       console.log('\n1️⃣ Seeding expanded sources...');
       await seedExpandedSources();
       
       console.log('\n2️⃣ Running initial ingestion...');
-      await runEnhancedIngestion();
+      await runSimpleIngestion();
       
       console.log('\n3️⃣ Running enrichment (grouping & analysis)...');
       const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
@@ -337,16 +353,12 @@ program
   .command('config')
   .description('Display current configuration')
   .action(() => {
-    console.log('⚙️  Enhanced Ingestion Configuration');
+    console.log('⚙️  Streamlined Ingestion Configuration');
     console.log('=' .repeat(50));
-    console.log(`TF-IDF Threshold: ${ENHANCED_CONFIG.TF_IDF_THRESHOLD}`);
-    console.log(`Title Similarity Threshold: ${ENHANCED_CONFIG.TITLE_SIMILARITY_THRESHOLD}`);
-    console.log(`Combined Threshold: ${ENHANCED_CONFIG.COMBINED_THRESHOLD}`);
-    console.log(`Recent Hours Window: ${ENHANCED_CONFIG.RECENT_HOURS}`);
-    console.log(`Batch Size: ${ENHANCED_CONFIG.BATCH_SIZE}`);
-    console.log(`Max Group Size: ${ENHANCED_CONFIG.MAX_GROUP_SIZE}`);
-    console.log(`Fetch Interval: ${ENHANCED_CONFIG.FETCH_INTERVAL} minutes`);
-    console.log(`Cleanup Interval: ${ENHANCED_CONFIG.CLEANUP_INTERVAL} minutes`);
+    console.log(`Minimum Title Length: ${INGEST_CONFIG.MIN_TITLE_LENGTH}`);
+    console.log(`Default Fetch Interval: ${INGEST_CONFIG.FETCH_INTERVAL} minutes`);
+    console.log(`Request Timeout: ${INGEST_CONFIG.REQUEST_TIMEOUT}ms`);
+    console.log('\n💡 Note: Advanced configuration (thresholds, grouping, etc.) is handled by enrich-worker');
   });
 
 // Parse command line arguments
