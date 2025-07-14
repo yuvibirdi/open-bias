@@ -126,10 +126,6 @@
                 <h4 class="article-title">
                   <a :href="article.link" target="_blank" rel="noopener noreferrer" class="article-link">
                     {{ article.title }}
-                    <svg class="external-link-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                    </svg>
                   </a>
                 </h4>
                 <div class="article-meta">
@@ -790,14 +786,6 @@ onMounted(() => {
 
 .article-link:hover {
   color: #3b82f6;
-}
-
-.external-link-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  margin-top: 2px;
-  opacity: 0.6;
 }
 
 .article-meta {
