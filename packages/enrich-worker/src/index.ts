@@ -1,3 +1,18 @@
+/**
+ * Enrich-Worker Main Entry Point
+ * ------------------------------
+ * Core functions:
+ * 1. Article grouping using optimized multi-stage algorithm
+ * 2. AI-powered bias analysis of grouped articles
+ * 3. Elasticsearch indexing of enriched articles
+ */
+
+// 🔧 DEVELOPMENT MAGIC NUMBERS - Control processing limits during development
+// Set to -1 to process ALL, or any positive number to limit for development
+// This helps when you don't have GPU compute and need faster processing times
+const DEV_ARTICLE_LIMIT: number = 100; // Total articles to process
+const DEV_GROUP_ANALYSIS_LIMIT: number = 20; // Groups to analyze per run
+
 import { Client, HttpConnection } from "@elastic/elasticsearch";
 import { db, articles, type Article as DbArticle, sources } from "@open-bias/db";
 import { eq, isNull, or, inArray } from "drizzle-orm";

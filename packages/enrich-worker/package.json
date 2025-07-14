@@ -11,12 +11,20 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@open-bias/db": "workspace:*",
     "@elastic/elasticsearch": "^8.14.0",
+    "@open-bias/db": "workspace:*",
+    "@open-bias/common": "workspace:*",
+    "natural": "^7.0.0",
+    "openai": "^5.8.2"
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",
+    "enhance-images": "bun run enhance-images.ts",
+    "enhance-images:continuous": "bun run enhance-images.ts --continuous",
     "build": "bun build src/index.ts --outdir dist --target bun",
-    "lint": "bunx eslint ./src/"
+    "lint": "bunx eslint ./src/",
+    "test": "bun run test-e2e.ts",
+    "test:e2e": "bun run test-e2e.ts",
+    "seed": "bun run seed.ts"
   }
 }

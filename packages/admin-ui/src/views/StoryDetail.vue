@@ -1,0 +1,406 @@
+<template>
+  <div class="min-h-screen bg-gray-50 font-sans">
+    <!-- Loading State -->
+    <div v-if="loading" class="flex items-center justify-center min-h-screen">
+      <div class="text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-3 border-blue-500 border-t-transparent mx-auto mb-4"></div>
+        <p class="text-gray-600">Loading story details...</p>
+      </div>
+    </div>
+
+    <!-- Error State -->
+    <div v-else-if="error" class="flex items-center justify-center min-h-screen">
+      <div class="text-center max-w-md mx-auto p-8">
+        <div class="w-16 h-16 mx-auto mb-4 text-red-500">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z"></path>
+          </svg>
+        </div>
+        <h3 class="text-xl font-semibold text-gray-900 mb-2">Story Not Found</h3>
+        <p class="text-gray-600 mb-6">{{ error }}</p>
+        <button 
+          @click="goBackToStories"
+          class="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Back to Stories
+        </button>
+      </div>
+    </div>
+
+    <!-- Story Content -->
+    <div v-else-if="story">
+      <!-- Navigation Header -->
+      <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex items-center justify-between h-16">
+            <button 
+              @click="goBackToStories"
+              class="inline-flex items-center px-2 py-1 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded transition-colors"
+            >
+              <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+              </svg>
+              Back
+            </button>
+            
+            <div class="flex items-center space-x-3">
+              <button 
+                @click="shareStory"
+                class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Share story"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"></path>
+                </svg>
+              </button>
+              <button 
+                @click="toggleBookmark"
+                class="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                :class="isBookmarked ? 'text-yellow-600' : 'text-gray-500 hover:text-gray-700'"
+                title="Bookmark story"
+              >
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Story Article -->
+        <article class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+          <!-- Story Header -->
+          <div class="p-6 sm:p-8">
+            <!-- Meta Information -->
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center space-x-4">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  {{ story.category || 'News' }}
+                </span>
+                <time class="text-sm text-gray-500">
+                  {{ formatDate(story.publishedAt || story.lastUpdated) }}
+                </time>
+              </div>
+              
+              <div v-if="story.coverageScore" class="flex items-center text-sm text-gray-500">
+                <span class="mr-2">Coverage:</span>
+                <span class="font-semibold text-gray-900">{{ story.coverageScore }}%</span>
+              </div>
+            </div>
+
+            <!-- Title -->
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 leading-tight mb-6">
+              {{ story.title || story.name }}
+            </h1>
+
+            <!-- Hero Image Section -->
+            <div class="mb-6">
+              <EnhancedImage
+                :src="heroImageUrl"
+                :fallbacks="fallbackImages"
+                :alt="story.title || story.name"
+                :category="story.category || 'news'"
+                container-class="relative rounded-lg overflow-hidden"
+                image-class="absolute top-0 left-0 w-full h-full object-cover"
+                placeholder-class="h-48"
+                placeholder-text="News Story"
+                :lazy="false"
+                @load="imageLoaded = true"
+                @error="imageError = true"
+              />
+            </div>
+
+            <!-- Summary -->
+            <div class="prose prose-lg max-w-none">
+              <p class="text-xl text-gray-700 leading-relaxed font-light">
+                {{ story.summary || story.neutralSummary || 'This story is developing and details are being gathered from multiple sources.' }}
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <!-- Sources Section -->
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div class="p-6 sm:p-8">
+            <div class="flex items-center justify-between mb-6">
+              <h2 class="text-2xl font-bold text-gray-900">Sources</h2>
+              <span class="text-sm text-gray-500">{{ story.sources?.length || 0 }} articles</span>
+            </div>
+            
+            <div v-if="story.sources && story.sources.length > 0" class="space-y-6">
+              <div 
+                v-for="source in story.sources" 
+                :key="source.id"
+                class="border border-gray-200 rounded-lg p-5 hover:bg-gray-50 transition-colors"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1 min-w-0">
+                    <!-- Source Header -->
+                    <div class="flex items-center space-x-3 mb-3">
+                      <h3 class="font-semibold text-gray-900 text-base">{{ source.name }}</h3>
+                      <span 
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                        :class="getBiasChipClasses(source.biasScore || 0)"
+                      >
+                        {{ getBiasLabel(source.biasScore || 0) }}
+                      </span>
+                      <time class="text-xs text-gray-500 hidden sm:block">{{ formatDate(source.publishedAt) }}</time>
+                    </div>
+                    
+                    <!-- Article Title -->
+                    <h4 class="text-lg font-medium text-gray-900 mb-3 leading-snug">
+                      {{ source.title }}
+                    </h4>
+                    
+                    <!-- Article Excerpt -->
+                    <p v-if="source.excerpt || source.summary" class="text-gray-600 mb-4 leading-relaxed">
+                      {{ source.excerpt || source.summary }}
+                    </p>
+
+                    <!-- Mobile timestamp -->
+                    <time class="text-xs text-gray-500 block sm:hidden mb-3">{{ formatDate(source.publishedAt) }}</time>
+                  </div>
+                  
+                  <!-- Read Article Button -->
+                  <a 
+                    :href="source.url" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    class="ml-4 inline-flex items-center px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex-shrink-0"
+                  >
+                    Read Article
+                    <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <!-- No sources message -->
+            <div v-else class="text-center py-12 text-gray-500">
+              <svg class="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+              </svg>
+              <p>No sources available for this story.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useApi } from '../composables/useApi'
+import EnhancedImage from '../components/EnhancedImage.vue'
+
+interface Source {
+  id: string
+  name: string
+  url: string
+  excerpt: string
+  publishedAt: string
+  biasScore?: number
+  bias?: string
+  imageUrl?: string
+  title?: string
+  summary?: string
+}
+
+interface Story {
+  id: string
+  title?: string
+  name?: string
+  summary?: string
+  neutralSummary?: string
+  category?: string
+  publishedAt?: string
+  lastUpdated?: string
+  sources: Source[]
+  coverageScore?: number
+}
+
+const route = useRoute()
+const router = useRouter()
+const { get } = useApi()
+
+const loading = ref(true)
+const error = ref('')
+const story = ref<Story | null>(null)
+const isBookmarked = ref(false)
+const imageError = ref(false)
+const imageLoaded = ref(false)
+
+const storyId = computed(() => route.params.id as string)
+
+// Utility function to validate image URLs
+const isValidImageUrl = (url: string | null | undefined): boolean => {
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === '') return false
+  
+  try {
+    const urlObj = new URL(trimmed)
+    return urlObj.protocol === 'http:' || urlObj.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+// Enhanced hero image computation with fallback logic
+const heroImageUrl = computed(() => {
+  if (!story.value?.sources || imageError.value) return null
+  
+  // Find sources with valid image URLs, prioritizing recent articles
+  const sourcesWithImages = story.value.sources
+    .filter(source => isValidImageUrl(source.imageUrl))
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+  
+  return sourcesWithImages[0]?.imageUrl || null
+})
+
+// Fallback images array for when primary fails
+const fallbackImages = computed(() => {
+  if (!story.value?.sources) return []
+  return story.value.sources
+    .filter(source => isValidImageUrl(source.imageUrl))
+    .map(source => source.imageUrl)
+    .slice(1, 4) // Get up to 3 fallback images
+})
+
+// Better back navigation
+const goBackToStories = () => {
+  router.push('/stories')
+}
+
+const loadStory = async () => {
+  try {
+    loading.value = true
+    error.value = ''
+    imageError.value = false // Reset image error state
+    
+    const response: any = await get(`/api/stories/${storyId.value}`)
+    
+    if (response.story && response.articles) {
+      // Transform API response to match component expectations
+      story.value = {
+        id: response.story.id.toString(),
+        title: response.story.name,
+        name: response.story.name,
+        summary: response.story.neutralSummary || 'No summary available',
+        neutralSummary: response.story.neutralSummary,
+        category: 'News',
+        publishedAt: response.articles[0]?.published || new Date().toISOString(),
+        lastUpdated: response.story.lastUpdated,
+        coverageScore: response.coverageScore,
+        sources: response.articles.map((article: any) => ({
+          id: article.id.toString(),
+          name: article.sourceName,
+          url: article.link,
+          title: article.title,
+          excerpt: article.summary,
+          summary: article.summary,
+          publishedAt: article.published,
+          biasScore: parseFloat(article.politicalLeaning) || 0,
+          bias: article.sourceBias,
+          imageUrl: article.imageUrl && article.imageUrl.trim() !== 'null' ? article.imageUrl : null,
+        })),
+      }
+    } else {
+      error.value = 'Story not found'
+    }
+  } catch (err) {
+    console.error('Failed to load story:', err)
+    error.value = 'Failed to load story details'
+  } finally {
+    loading.value = false
+  }
+}
+
+const toggleBookmark = async () => {
+  try {
+    isBookmarked.value = !isBookmarked.value
+    // TODO: Implement actual bookmark API call
+  } catch (error) {
+    console.error('Failed to toggle bookmark:', error)
+  }
+}
+
+const shareStory = async () => {
+  const url = window.location.href
+  const title = story.value?.title || story.value?.name || 'Check out this story from OpenBias'
+  
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url })
+    } catch (error) {
+      // User cancelled or error occurred, fallback to clipboard
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url)
+        console.log('Link copied to clipboard')
+      }
+    }
+  } else if (navigator.clipboard) {
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(url)
+      console.log('Link copied to clipboard')
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error)
+    }
+  }
+}
+
+const formatDate = (dateString: string) => {
+  if (!dateString) return 'Unknown'
+  
+  try {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - date.getTime())
+    const diffHours = Math.floor(diffTime / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffHours < 1) return 'Just now'
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays === 1) return 'Yesterday'
+    if (diffDays < 7) return `${diffDays} days ago`
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+    
+    // For older dates, show the actual date
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    })
+  } catch (error) {
+    return 'Unknown'
+  }
+}
+
+const getBiasLabel = (score: number) => {
+  if (score > 0.5) return 'Right-leaning'
+  if (score < -0.5) return 'Left-leaning'
+  return 'Center'
+}
+
+const getBiasChipClasses = (score: number) => {
+  if (score > 0.5) return 'bg-red-100 text-red-800'
+  if (score < -0.5) return 'bg-blue-100 text-blue-800'
+  return 'bg-gray-100 text-gray-800'
+}
+
+onMounted(() => {
+  loadStory()
+})
+</script>
+
+<style scoped>
+/* Custom styles can be added here if needed */
+</style>
