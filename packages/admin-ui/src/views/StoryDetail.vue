@@ -15,7 +15,7 @@
         <p class="text-gray-600 text-sm mb-4">{{ error }}</p>
         <button 
           @click="goBackToStories"
-          class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+          class="text-blue-600 hover:text-blue-800 font-medium text-sm"
         >
           ← Back to Stories
         </button>
@@ -25,28 +25,30 @@
     <!-- Story Content -->
     <div v-else-if="story">
       <!-- Navigation Header -->
-      <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div class="max-w-5xl mx-auto px-4 sm:px-6">
-          <div class="flex items-center justify-between h-14">
+      <header class="bg-white border-b border-gray-200">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6">
+          <div class="flex items-center justify-between h-16">
+            <!-- Back button on left -->
             <button 
               @click="goBackToStories"
-              class="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors"
+              class="text-blue-600 hover:text-blue-800 font-medium text-sm"
             >
               ← Back to Stories
             </button>
             
-            <div class="flex items-center space-x-3">
+            <!-- Action buttons on right -->
+            <div class="flex items-center space-x-6">
               <button 
                 @click="shareStory"
-                class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors"
+                class="text-gray-600 hover:text-gray-900 font-medium text-sm"
                 title="Share story"
               >
                 Share
               </button>
               <button 
                 @click="toggleBookmark"
-                class="px-3 py-2 text-sm hover:bg-gray-50 rounded-md transition-colors"
-                :class="isBookmarked ? 'text-yellow-600' : 'text-gray-600 hover:text-gray-900'"
+                class="font-medium text-sm"
+                :class="isBookmarked ? 'text-yellow-600 hover:text-yellow-700' : 'text-gray-600 hover:text-gray-900'"
                 title="Bookmark story"
               >
                 {{ isBookmarked ? '★' : '☆' }}
@@ -57,43 +59,40 @@
       </header>
 
       <!-- Main Content -->
-      <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+      <main class="max-w-4xl mx-auto px-4 sm:px-6 py-8">
         <!-- Story Article -->
-        <article class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+        <article class="bg-white rounded-lg border border-gray-200 mb-8">
           <!-- Story Header -->
-          <div class="p-6 sm:p-8">
+          <div class="text-center p-8 sm:p-12">
             <!-- Meta Information -->
-            <div class="flex items-center justify-between mb-6">
-              <div class="flex items-center space-x-3">
-                <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                  {{ story.category || 'News' }}
-                </span>
-                <time class="text-sm text-gray-500">
-                  {{ formatDate(story.publishedAt || story.lastUpdated || '') }}
-                </time>
-              </div>
-              
+            <div class="flex items-center justify-center flex-wrap gap-4 mb-6">
+              <span class="px-3 py-1 rounded text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                {{ story.category || 'News' }}
+              </span>
+              <time class="text-sm text-gray-600 font-medium">
+                {{ formatDate(story.publishedAt || story.lastUpdated || '') }}
+              </time>
               <div v-if="story.coverageScore" class="flex items-center text-sm">
-                <span class="text-gray-500 mr-2">Coverage</span>
-                <div class="flex items-center bg-green-50 px-2.5 py-1 rounded-md border border-green-200">
-                  <div class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></div>
-                  <span class="font-medium text-green-700 text-xs">{{ story.coverageScore }}%</span>
+                <span class="text-gray-600 font-medium mr-2">Coverage</span>
+                <div class="flex items-center bg-green-50 px-3 py-1 rounded border border-green-200">
+                  <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                  <span class="font-medium text-green-700">{{ story.coverageScore }}%</span>
                 </div>
               </div>
             </div>
 
             <!-- Title -->
-            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 leading-tight mb-6">
+            <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 leading-tight mb-8 max-w-4xl mx-auto">
               {{ story.title || story.name }}
             </h1>
 
             <!-- Hero Image Section -->
-            <div class="mb-6">
+            <div class="mb-8 max-w-4xl mx-auto">
               <div v-if="getHeroImage() && !imageError" class="relative rounded-lg overflow-hidden bg-gray-100">
                 <img 
                   :src="getHeroImage() || ''"
                   :alt="story.title || story.name"
-                  class="w-full h-48 sm:h-64 lg:h-72 object-cover"
+                  class="w-full h-64 sm:h-80 lg:h-96 object-cover"
                   loading="eager"
                   @error="handleImageError"
                   @load="imageLoaded = true"
@@ -101,18 +100,18 @@
               </div>
               
               <!-- Image Placeholder when no image or error -->
-              <div v-else class="relative rounded-lg overflow-hidden bg-gray-100 h-48 sm:h-64 flex items-center justify-center border border-gray-200">
+              <div v-else class="relative rounded-lg overflow-hidden bg-gray-100 h-64 sm:h-80 lg:h-96 flex items-center justify-center border border-gray-200">
                 <div class="text-center text-gray-400">
-                  <div class="text-4xl mb-2">📰</div>
-                  <p class="text-sm font-medium">Breaking News</p>
-                  <p class="text-xs">Visual content pending</p>
+                  <div class="text-6xl mb-4">📰</div>
+                  <p class="text-lg font-medium">Breaking News</p>
+                  <p class="text-sm">Visual content pending</p>
                 </div>
               </div>
             </div>
 
             <!-- Summary -->
-            <div class="prose prose-lg max-w-none">
-              <p class="text-lg text-gray-700 leading-relaxed">
+            <div class="max-w-3xl mx-auto">
+              <p class="text-xl sm:text-2xl text-gray-700 leading-relaxed">
                 {{ story.summary || story.neutralSummary || 'This story is developing and details are being gathered from multiple sources.' }}
               </p>
             </div>
@@ -120,45 +119,42 @@
         </article>
 
         <!-- Sources Section -->
-        <section class="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div class="p-6 sm:p-8">
-            <div class="flex items-center justify-between mb-6">
-              <h2 class="text-xl font-bold text-gray-900">Sources</h2>
-              <span class="text-xs font-medium text-gray-500 bg-gray-50 px-2.5 py-1 rounded-md">{{ story.sources?.length || 0 }} articles</span>
+        <section class="bg-white rounded-lg border border-gray-200">
+          <div class="p-8 sm:p-12">
+            <div class="text-center mb-8">
+              <h2 class="text-2xl font-bold text-gray-900 mb-2">Sources</h2>
+              <p class="text-gray-600 font-medium">{{ story.sources?.length || 0 }} articles from multiple outlets</p>
             </div>
             
-            <div v-if="story.sources && story.sources.length > 0" class="space-y-4">
+            <div v-if="story.sources && story.sources.length > 0" class="max-w-4xl mx-auto space-y-6">
               <div 
                 v-for="source in story.sources" 
                 :key="source.id"
-                class="border border-gray-200 rounded-lg p-5 hover:bg-gray-50 hover:border-gray-300 transition-all duration-150"
+                class="border border-gray-200 rounded-lg p-6 hover:bg-gray-50 hover:border-gray-300 transition-all duration-150"
               >
                 <div class="flex items-start justify-between">
                   <div class="flex-1 min-w-0">
                     <!-- Source Header -->
-                    <div class="flex items-center space-x-3 mb-3">
-                      <h3 class="font-semibold text-gray-900 text-base">{{ source.name }}</h3>
+                    <div class="flex items-center flex-wrap gap-3 mb-4">
+                      <h3 class="font-semibold text-gray-900 text-lg">{{ source.name }}</h3>
                       <span 
-                        class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium"
+                        class="px-3 py-1 rounded text-xs font-medium"
                         :class="getBiasChipClasses(source.biasScore || 0)"
                       >
                         {{ getBiasLabel(source.biasScore || 0) }}
                       </span>
-                      <time class="text-xs text-gray-500 hidden sm:block">{{ formatDate(source.publishedAt) }}</time>
+                      <time class="text-sm text-gray-600 font-medium">{{ formatDate(source.publishedAt) }}</time>
                     </div>
                     
                     <!-- Article Title -->
-                    <h4 class="text-lg font-semibold text-gray-900 mb-3 leading-snug">
+                    <h4 class="text-xl font-semibold text-gray-900 mb-3 leading-snug">
                       {{ source.title }}
                     </h4>
                     
                     <!-- Article Excerpt -->
-                    <p v-if="source.excerpt || source.summary" class="text-gray-600 mb-4 text-sm leading-relaxed">
+                    <p v-if="source.excerpt || source.summary" class="text-gray-600 mb-4 leading-relaxed">
                       {{ source.excerpt || source.summary }}
                     </p>
-
-                    <!-- Mobile timestamp -->
-                    <time class="text-xs text-gray-500 block sm:hidden mb-3">{{ formatDate(source.publishedAt) }}</time>
                   </div>
                   
                   <!-- Read Article Button -->
@@ -166,7 +162,7 @@
                     :href="source.url" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    class="ml-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors flex-shrink-0"
+                    class="ml-6 px-6 py-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors flex-shrink-0"
                   >
                     Read Article →
                   </a>
@@ -175,9 +171,9 @@
             </div>
 
             <!-- No sources message -->
-            <div v-else class="text-center py-8 text-gray-500">
-              <div class="text-4xl mb-3">📄</div>
-              <p class="text-sm">No sources available for this story.</p>
+            <div v-else class="text-center py-12 text-gray-500 max-w-md mx-auto">
+              <div class="text-6xl mb-4">📄</div>
+              <p class="text-lg font-medium">No sources available for this story.</p>
             </div>
           </div>
         </section>
