@@ -29,12 +29,10 @@
         "dev": "bun --filter '*' dev",
         "dev:back": "bun --filter api --filter ingest-worker --filter enrich-worker --parallel dev",
         "lint": "bunx eslint \"**/*.{ts,tsx,vue}\"",
-        "db:start": "docker compose -f infra/dev/docker-compose.yml up -d",
-        "db:stop": "docker compose -f infra/dev/docker-compose.yml down",
-        "db:migrate": "bun --filter ./packages/db migrate",
-        "db:seed": "bun run packages/db/src/seedSources.ts",
-        "db:setup": "bun run db:start && bun run db:migrate && bun run db:load_new_data",
-        "db:load_new_data": "bun run packages/db/src/seedSources.ts && bun run packages/ingest-worker/src/index.ts && bun run packages/enrich-worker/src/index.ts"
+        "db:setup": "docker compose -f infra/dev/docker-compose.yml up -d && bun --filter ./packages/db migrate && bun packages/db/src/seedSources.ts && bun packages/ingest-worker/ingest-manager.ts ingest && bun packages/enrich-worker/src/index.ts",
+        "db:delete": "docker compose -f infra/dev/docker-compose.yml down -v",
+        "db:update": "bun packages/ingest-worker/ingest-manager.ts ingest && bun packages/enrich-worker/src/index.ts",
+        "db:update-force": "bun packages/ingest-worker/ingest-manager.ts cleanup && bun packages/ingest-worker/ingest-manager.ts ingest && bun packages/enrich-worker/src/index.ts"
     },
     "dependencies": {
         "@aws-sdk/client-comprehend": "^3.816.0",
