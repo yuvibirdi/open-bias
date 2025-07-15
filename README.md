@@ -50,23 +50,11 @@ graph TD
 ```
 
 ### Core Components
-
 - **`ingest-worker`**: Monitors 40+ RSS feeds, performs intelligent story grouping with quality controls, and maintains source diversity
 - **`enrich-worker`**: AI-powered bias analysis using multiple providers, sentiment detection, and Elasticsearch indexing
 - **`api`**: Hono-based REST API with JWT authentication, story endpoints, and user management
-- **`admin-ui`**: Vue 3 dashboard with real-time story feed, bias visualization, and user authentication
+- **`admin-ui`**: Vue 3 + TypeScript dashboard with CoreUI components, bias visualization, and user authentication and real-time story feeds with an admin dashboard
 - **`db`**: MySQL for persistent storage, Elasticsearch for advanced search and analytics
-
-## Packages
-
-The monorepo contains these interconnected packages:
-
-- **`packages/admin-ui`**: Vue 3 + TypeScript dashboard with CoreUI components and real-time story feeds
-- **`packages/api`**: Hono-based REST API with JWT authentication and bias analysis endpoints
-- **`packages/db`**: Drizzle ORM schema with MySQL database and source management
-- **`packages/ingest-worker`**: RSS monitoring with intelligent story grouping and management CLI
-- **`packages/enrich-worker`**: AI bias analysis pipeline with Elasticsearch indexing
-- **`packages/common`**: Shared TypeScript utilities and image services
 
 ## 🛠️ Management Commands
 
