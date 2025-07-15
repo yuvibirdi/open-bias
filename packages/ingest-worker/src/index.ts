@@ -1,261 +1,369 @@
+#!/usr/bin/env bun
 /**
- * Ingest‑Worker
- * -------------
- * 1. Reads every RSS feed stored in the `sources` table (expects `sources.bias` to be set)
- * 2. Parses the feed with rss‑parser
- * 3. Inserts new articles into the `articles` table (idempotent), including `imageUrl` and `bias`.
- * 4. Groups similar articles from different sources into story groups
- * 5. Updates coverage tracking for multi-source stories
- *
- * Run locally with:
- *    bun run packages/ingest-worker/src/index.ts
- * or in watch mode via workspace `dev` script.
+ * Story Ingestion Management CLI
+ * ------------------------------
+ * This script provides commands to manage the enhanced story ingestion system:
+ * - Seed expanded news sources
+ * - Run enhanced ingestion (single or scheduled)
+ * - Run grouping and analysis via enrich-worker
+ * - Monitor system health
  */
 
-import Parser from "rss-parser";
-import { db, sources, articles, articleGroups, storyCoverage, type Source, type InsertArticle } from "@open-bias/db";
-import { eq, and, isNull, sql, desc } from "drizzle-orm";
-import { parseISO, subHours } from "date-fns";
-import { TfIdf } from "natural";
+import { Command } from 'commander';
+import { seedExpandedSources } from '@open-bias/db';
+import { 
+  runSimpleIngestion, 
+  SimpleIngestScheduler, 
+  INGEST_CONFIG 
+} from './simple-ingest';
+import { db, sources, articles, articleGroups, storyCoverage } from '@open-bias/db';
+import { count, sql, desc, eq } from 'drizzle-orm';
+import { spawn } from 'child_process';
+import path from 'path';
 
-// Extend RSSItem type to include potential image fields
-type RSSItem = {
-  title?: string;
-  link?: string;
-  pubDate?: string;
-  contentSnippet?: string;
-  enclosure?: {
-    url?: string;
-    type?: string;
-  };
-  image?: string | { url?: string }; // some feeds use <image><url>...
-  itunes?: { image?: string }; // For podcasts or feeds with iTunes namespace
-  media?: { content?: { $: { url?: string } }[] }; // Media RSS
-  mediaContent?: Array<{ $?: { url?: string; medium?: string } }>; // Media content array
-  [key: string]: unknown; // Allow other fields
-};
+const program = new Command();
 
-const parser = new Parser<unknown, RSSItem>({ // Specify custom fields for parser to pick up
-  customFields: {
-    item: [
-      'enclosure',
-      ['media:content', 'mediaContent', { keepArray: true }]
-      // add other potential image fields if necessary, e.g. 'image', 'itunes:image'
-    ]
-  }
-});
+program
+  .name('ingest-manager')
+  .description('Streamlined story ingestion management CLI')
+  .version('2.0.0');
 
-async function ingestOneFeed(src: Source) { // Use Source type from db
-  if (src.bias === null || typeof src.bias === 'undefined') {
-    console.warn(`[${src.name}] Source is missing a bias value or it is null. Skipping article bias assignment.`);
-    // Or handle as an error if bias is mandatory for ingestion
-  }
-
-  const feed = await parser.parseURL(src.rss);
-
-  for (const item of feed.items) {
-    if (!item.link || !item.title) continue; // malformed entry
-
-    // Has this link already been stored?
-    const exists = await db
-      .select({ id: articles.id })
-      .from(articles)
-      .where(eq(articles.link, item.link))
-      .limit(1);
-
-    if (exists.length) continue; // duplicates skipped
-
-    let imageUrl: string | null = null;
-    if (item.enclosure?.url && item.enclosure.type?.startsWith('image/')) {
-      imageUrl = item.enclosure.url;
-    } else if (item.itunes?.image) {
-      imageUrl = item.itunes.image;
-    } else if (typeof item.image === 'string') {
-        imageUrl = item.image;
-    } else if (typeof item.image?.url === 'string') {
-        imageUrl = item.image.url;
-    } else if (item.mediaContent && item.mediaContent.length > 0) {
-      const mediaImage = item.mediaContent.find((media) => media.$?.url && media.$?.medium === 'image');
-      if (mediaImage?.$ && mediaImage.$.url) {
-        imageUrl = mediaImage.$.url;
-      }
-    }
-    // Add more extraction logic if needed for specific feeds
-
-    const articleToInsert = {
-      sourceId: src.id,
-      title: item.title,
-      link: item.link,
-      summary: item.contentSnippet?.substring(0, 1000) ?? null,
-      published: (() => {
-        if (!item.pubDate) return new Date();
-        try {
-          const d = parseISO(item.pubDate);
-          return isNaN(d.valueOf()) ? new Date() : d;
-        } catch {
-          console.warn(`Failed to parse date ${item.pubDate} for ${item.title}, using current date.`);
-          return new Date();
-        }
-      })(),
-      imageUrl: imageUrl,
-      bias: src.bias,
-      // indexed will use its default value from the schema (0)
-    };
-
-    await db.insert(articles).values(articleToInsert);
-
-    console.log(`+ [${src.name}] ${item.title}`);
-  }
-}
-
-const GROUPING_SIMILARITY_THRESHOLD = 0.3;
-const RECENT_HOURS = 48; // Look for similar articles within 48 hours
-
-async function groupNewArticle(insertedId: any, title: string, summary?: string) {
-  if (!summary || summary.length < 20) return;
-
-  // Find recent articles (within 48 hours) that might be about the same story
-  const recentCutoff = subHours(new Date(), RECENT_HOURS);
-  
-  const recentArticles = await db
-    .select({
-      id: articles.id,
-      title: articles.title,
-      summary: articles.summary,
-      sourceId: articles.sourceId,
-      bias: articles.bias,
-      groupId: articles.groupId,
-    })
-    .from(articles)
-    .where(
-      and(
-        sql`${articles.published} >= ${recentCutoff}`,
-        sql`${articles.id} != ${insertedId}`
-      )
-    )
-    .orderBy(desc(articles.published))
-    .limit(100); // Limit to prevent performance issues
-
-  if (recentArticles.length === 0) return;
-
-  // Use TF-IDF to find similar articles
-  const tfidf = new TfIdf();
-  const currentText = `${title} ${summary}`;
-  
-  // Add the current article first
-  tfidf.addDocument(currentText);
-  
-  // Add recent articles
-  const candidateArticles = recentArticles.filter(a => a.summary && a.summary.length > 20);
-  for (const article of candidateArticles) {
-    tfidf.addDocument(`${article.title} ${article.summary}`);
-  }
-
-  // Find the most similar article
-  let bestMatch: typeof candidateArticles[0] | null = null;
-  let bestSimilarity = 0;
-
-  for (let i = 0; i < candidateArticles.length; i++) {
-    const similarity = tfidf.tfidf(currentText, i + 1); // +1 because current article is at index 0
-    if (similarity > bestSimilarity && similarity > GROUPING_SIMILARITY_THRESHOLD) {
-      bestSimilarity = similarity;
-      bestMatch = candidateArticles[i];
-    }
-  }
-
-  if (bestMatch) {
-    let groupId = bestMatch.groupId;
-    
-    // If the best match doesn't have a group, create one
-    if (!groupId) {
-      const groupResult = await db.insert(articleGroups).values({
-        name: bestMatch.title.substring(0, 500), // Truncate to fit
-        masterArticleId: bestMatch.id,
-      });
-      groupId = groupResult[0].insertId;
-      
-      // Update the best match article to be in this group
-      await db.update(articles)
-        .set({ groupId })
-        .where(eq(articles.id, bestMatch.id));
-    }
-
-    // Add the new article to the group
-    await db.update(articles)
-      .set({ groupId })
-      .where(eq(articles.id, insertedId));
-
-    // Update coverage tracking
-    await updateCoverageTracking(groupId);
-
-    console.log(`  -> Grouped with existing story (similarity: ${bestSimilarity.toFixed(3)})`);
-  }
-}
-
-async function updateCoverageTracking(groupId: number) {
-  // Get all articles in this group with their bias information
-  const groupArticles = await db
-    .select({
-      id: articles.id,
-      bias: articles.bias,
-      published: articles.published,
-    })
-    .from(articles)
-    .where(eq(articles.groupId, groupId));
-
-  const leftCount = groupArticles.filter(a => a.bias === 'left').length;
-  const centerCount = groupArticles.filter(a => a.bias === 'center').length;
-  const rightCount = groupArticles.filter(a => a.bias === 'right').length;
-  const totalCount = groupArticles.length;
-
-  // Calculate coverage score (0-100) based on how well represented different perspectives are
-  const maxPossibleBalance = Math.min(leftCount + centerCount + rightCount, 3); // Perfect would be at least 1 from each
-  const actualBalance = (leftCount > 0 ? 1 : 0) + (centerCount > 0 ? 1 : 0) + (rightCount > 0 ? 1 : 0);
-  const coverageScore = (actualBalance / 3) * 100;
-
-  const firstReported = groupArticles.reduce((earliest, article) => 
-    !earliest || article.published < earliest ? article.published : earliest, 
-    null as Date | null
-  );
-
-  // Upsert coverage tracking
-  await db.insert(storyCoverage).values({
-    groupId,
-    leftCoverage: leftCount,
-    centerCoverage: centerCount,
-    rightCoverage: rightCount,
-    totalCoverage: totalCount,
-    coverageScore,
-    firstReported,
-  }).onDuplicateKeyUpdate({
-    leftCoverage: leftCount,
-    centerCoverage: centerCount,
-    rightCoverage: rightCount,
-    totalCoverage: totalCount,
-    coverageScore,
-    lastUpdated: new Date(),
-  });
-}
-
-async function main() {
-  const allSources = await db.select().from(sources);
-
-  for (const src of allSources) {
-    if (!src.rss) {
-      console.warn(`Source "${src.name}" is missing an RSS feed URL. Skipping.`);
-      continue;
-    }
+// Seed expanded sources
+program
+  .command('seed-sources')
+  .description('Seed the database with expanded news sources (40+ sources)')
+  .action(async () => {
     try {
-      await ingestOneFeed(src as Source); // Cast to Source if type from select isn't specific enough
-    } catch (err: unknown) {
-      console.error(`Feed failed for ${src.name} (${src.rss}):`, err instanceof Error ? err.message : String(err));
+      console.log('🌱 Seeding expanded news sources...');
+      await seedExpandedSources();
+      console.log('✅ Expanded sources seeded successfully!');
+    } catch (error) {
+      console.error('❌ Failed to seed sources:', error);
+      process.exit(1);
     }
-  }
+  });
 
-  console.log("Ingestion process completed.");
+// Run single ingestion
+program
+  .command('ingest')
+  .description('Run a single simple ingestion cycle (fetch articles only)')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(async (options) => {
+    try {
+      if (options.verbose) {
+        console.log('🚀 Starting simple ingestion with verbose logging...');
+      }
+      await runSimpleIngestion();
+      console.log('✅ Simple ingestion completed successfully!');
+      console.log('💡 Run "bun ingest-manager.ts enrich" to group articles and perform analysis');
+    } catch (error) {
+      console.error('❌ Ingestion failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Run grouping and analysis via enrich-worker
+program
+  .command('enrich')
+  .description('Run article grouping and analysis via enrich-worker')
+  .option('-m, --max-articles <number>', 'Maximum articles to process (-1 for all)', '-1')
+  .option('-s, --max-per-source <number>', 'Maximum articles per source', '50')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(async (options) => {
+    try {
+      console.log('🧠 Starting enrichment (grouping and analysis)...');
+      
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      const enrichProcess = spawn('bun', [enrichWorkerPath], {
+        stdio: 'inherit',
+        cwd: path.join(process.cwd(), '..', 'enrich-worker')
+      });
+
+      enrichProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log('✅ Enrichment completed successfully!');
+        } else {
+          console.error(`❌ Enrichment failed with code ${code}`);
+          process.exit(1);
+        }
+      });
+
+      enrichProcess.on('error', (error) => {
+        console.error('❌ Failed to start enrichment process:', error);
+        process.exit(1);
+      });
+
+    } catch (error) {
+      console.error('❌ Enrichment failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Run full pipeline: ingest + enrich
+program
+  .command('full')
+  .description('Run full pipeline: ingestion followed by enrichment')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(async (options) => {
+    try {
+      console.log('🚀 Starting full pipeline...');
+      
+      // Step 1: Simple Ingestion
+      console.log('\n📥 Step 1: Simple Ingestion (fetch articles)');
+      await runSimpleIngestion();
+      console.log('✅ Ingestion completed');
+      
+      // Step 2: Enrichment
+      console.log('\n🧠 Step 2: Enrichment (Grouping & Analysis)');
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      await new Promise<void>((resolve, reject) => {
+        const enrichProcess = spawn('bun', [enrichWorkerPath], {
+          stdio: 'inherit',
+          cwd: path.join(process.cwd(), '..', 'enrich-worker')
+        });
+
+        enrichProcess.on('close', (code) => {
+          if (code === 0) {
+            console.log('✅ Enrichment completed');
+            resolve();
+          } else {
+            reject(new Error(`Enrichment failed with code ${code}`));
+          }
+        });
+
+        enrichProcess.on('error', (error) => {
+          reject(error);
+        });
+      });
+      
+      console.log('\n🎉 Full pipeline completed successfully!');
+      
+    } catch (error) {
+      console.error('❌ Full pipeline failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Start scheduled ingestion
+program
+  .command('schedule')
+  .description('Start the automated ingestion scheduler')
+  .option('-i, --interval <minutes>', 'Fetch interval in minutes', '30')
+  .action(async (options) => {
+    const interval = parseInt(options.interval);
+    if (isNaN(interval) || interval < 5) {
+      console.error('❌ Invalid interval. Must be at least 5 minutes.');
+      process.exit(1);
+    }
+
+    console.log(`⏰ Starting scheduled ingestion every ${interval} minutes...`);
+    
+    const scheduler = new SimpleIngestScheduler();
+    scheduler.start(interval);
+
+    // Handle graceful shutdown
+    process.on('SIGINT', () => {
+      console.log('\n🛑 Graceful shutdown initiated...');
+      scheduler.stop();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', () => {
+      console.log('\n🛑 Graceful shutdown initiated...');
+      scheduler.stop();
+      process.exit(0);
+    });
+
+    // Keep the process running
+    await new Promise(() => {});
+  });
+
+// Cleanup command - now handled by enrich-worker
+program
+  .command('cleanup')
+  .description('Run cleanup via enrich-worker (grouping, analysis, and cleanup)')
+  .action(async () => {
+    try {
+      console.log('🧹 Running cleanup via enrich-worker...');
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      await new Promise<void>((resolve, reject) => {
+        const enrichProcess = spawn('bun', [enrichWorkerPath], {
+          stdio: 'inherit',
+          cwd: path.join(process.cwd(), '..', 'enrich-worker')
+        });
+
+        enrichProcess.on('close', (code) => {
+          if (code === 0) {
+            console.log('✅ Cleanup completed successfully!');
+            resolve();
+          } else {
+            reject(new Error(`Cleanup failed with code ${code}`));
+          }
+        });
+
+        enrichProcess.on('error', (error) => {
+          reject(error);
+        });
+      });
+    } catch (error) {
+      console.error('❌ Cleanup failed:', error);
+      process.exit(1);
+    }
+  });
+
+// System status and health check
+program
+  .command('status')
+  .description('Display system status and health metrics')
+  .action(async () => {
+    try {
+      console.log('📊 System Status Report');
+      console.log('=' .repeat(50));
+
+      // Source counts
+      const totalSources = await db.select({ count: count() }).from(sources);
+      const sourcesByBias = await db
+        .select({ bias: sources.bias, count: count() })
+        .from(sources)
+        .groupBy(sources.bias);
+
+      console.log('\n📰 News Sources:');
+      console.log(`   Total: ${totalSources[0].count}`);
+      sourcesByBias.forEach(s => {
+        console.log(`   ${s.bias}: ${s.count}`);
+      });
+
+      // Article counts
+      const totalArticles = await db.select({ count: count() }).from(articles);
+      const recentArticles = await db
+        .select({ count: count() })
+        .from(articles)
+        .where(sql`${articles.published} >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`);
+
+      console.log('\n📄 Articles:');
+      console.log(`   Total: ${totalArticles[0].count}`);
+      console.log(`   Last 24h: ${recentArticles[0].count}`);
+
+      // Story group stats
+      const totalGroups = await db.select({ count: count() }).from(articleGroups);
+      const groupedArticles = await db
+        .select({ count: count() })
+        .from(articles)
+        .where(sql`${articles.groupId} IS NOT NULL`);
+
+      console.log('\n🔗 Story Groups:');
+      console.log(`   Total groups: ${totalGroups[0].count}`);
+      console.log(`   Grouped articles: ${groupedArticles[0].count}`);
+      console.log(`   Ungrouped articles: ${totalArticles[0].count - groupedArticles[0].count}`);
+
+      // Coverage quality
+      const coverageStats = await db
+        .select({
+          avgCoverage: sql<number>`AVG(CAST(${storyCoverage.coverageScore} AS DECIMAL))`,
+          goodCoverage: sql<number>`SUM(CASE WHEN CAST(${storyCoverage.coverageScore} AS DECIMAL) >= 70 THEN 1 ELSE 0 END)`,
+        })
+        .from(storyCoverage);
+
+      if (coverageStats[0]) {
+        console.log('\n📈 Coverage Quality:');
+        console.log(`   Avg coverage score: ${coverageStats[0].avgCoverage?.toFixed(1) || 'N/A'}%`);
+        console.log(`   High-quality stories: ${coverageStats[0].goodCoverage || 0}`);
+      }
+
+      // Recent activity
+      const recentGroups = await db
+        .select({
+          id: articleGroups.id,
+          name: articleGroups.name,
+          articleCount: count(articles.id),
+        })
+        .from(articleGroups)
+        .leftJoin(articles, eq(articles.groupId, articleGroups.id))
+        .groupBy(articleGroups.id)
+        .orderBy(desc(articleGroups.id))
+        .limit(5);
+
+      console.log('\n🆕 Recent Story Groups:');
+      recentGroups.forEach(group => {
+        const title = group.name.length > 60 ? group.name.substring(0, 60) + '...' : group.name;
+        console.log(`   ${group.id}: ${title} (${group.articleCount} articles)`);
+      });
+
+      console.log('\n✅ Status check completed!');
+    } catch (error) {
+      console.error('❌ Status check failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Initialize full system
+program
+  .command('init')
+  .description('Initialize the system: seed sources and run full pipeline')
+  .action(async () => {
+    try {
+      console.log('🚀 Initializing streamlined ingestion system...');
+      
+      console.log('\n1️⃣ Seeding expanded sources...');
+      await seedExpandedSources();
+      
+      console.log('\n2️⃣ Running initial ingestion...');
+      await runSimpleIngestion();
+      
+      console.log('\n3️⃣ Running enrichment (grouping & analysis)...');
+      const enrichWorkerPath = path.join(process.cwd(), '..', 'enrich-worker', 'src', 'index.ts');
+      
+      await new Promise<void>((resolve, reject) => {
+        const enrichProcess = spawn('bun', [enrichWorkerPath], {
+          stdio: 'inherit',
+          cwd: path.join(process.cwd(), '..', 'enrich-worker')
+        });
+
+        enrichProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Enrichment failed with code ${code}`));
+          }
+        });
+
+        enrichProcess.on('error', (error) => {
+          reject(error);
+        });
+      });
+      
+      console.log('\n✨ System initialization completed!');
+      console.log('\n📋 Next steps:');
+      console.log('   • Run "bun ingest-manager.ts status" to check system health');
+      console.log('   • Run "bun ingest-manager.ts schedule" to start automated ingestion');
+      console.log('   • Run "bun ingest-manager.ts full" for manual full pipeline runs');
+      
+    } catch (error) {
+      console.error('❌ System initialization failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Configuration display
+program
+  .command('config')
+  .description('Display current configuration')
+  .action(() => {
+    console.log('⚙️  Streamlined Ingestion Configuration');
+    console.log('=' .repeat(50));
+    console.log(`Minimum Title Length: ${INGEST_CONFIG.MIN_TITLE_LENGTH}`);
+    console.log(`Default Fetch Interval: ${INGEST_CONFIG.FETCH_INTERVAL} minutes`);
+    console.log(`Request Timeout: ${INGEST_CONFIG.REQUEST_TIMEOUT}ms`);
+    console.log('\n💡 Note: Advanced configuration (thresholds, grouping, etc.) is handled by enrich-worker');
+  });
+
+// Parse command line arguments
+program.parse(process.argv);
+
+// If no command provided, show help
+if (!process.argv.slice(2).length) {
+  program.outputHelp();
 }
-
-main().catch((e) => {
-  console.error("Ingest worker fatal:", e);
-  process.exit(1);
-});

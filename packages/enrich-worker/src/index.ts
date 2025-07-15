@@ -37,24 +37,6 @@ const es = new Client({
   }
 });
 
-/**
- * Main enrichment pipeline - OPTIMIZED APPROACH
- * 
- * NEW EFFICIENT FLOW:
- * 1. Group articles → 2. Immediately analyze each group as it's formed → 3. Index analyzed articles
- * 
- * Benefits:
- * - Lower memory usage (process groups one by one)
- * - Faster feedback during development
- * - More resilient (if one group fails, others continue)
- * - Parallel processing of group formation + bias analysis
- * 
- * Pipeline steps:
- * 1. Test AI connectivity
- * 2. Group articles with integrated real-time bias analysis
- * 3. Fallback analysis for any missed groups
- * 4. Index all analyzed articles to Elasticsearch
- */
 async function main() {
   console.log("🚀 Starting Enrich-Worker Pipeline...\n");
 

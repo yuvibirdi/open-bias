@@ -20,7 +20,8 @@
     "rss-parser": "^3.13.0"
   },
   "scripts": {
-    "dev": "bun --hot src/index.ts",
+    "dev": "bun --hot src/index.ts ingest",
+    "schedule": "bun src/index.ts schedule",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "lint": "bunx eslint ./src/"
   }

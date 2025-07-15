@@ -82,7 +82,7 @@ cd packages/ingest-worker
 bun ingest-manager.ts seed-sources  # Seed 40+ news sources
 bun ingest-manager.ts ingest        # Fetch articles from RSS feeds
 bun ingest-manager.ts enrich        # Run article grouping and analysis
-bun ingest-manager.ts schedule      # Automated ingestion (60min intervals)
+bun ingest-manager.ts schedule      # Automated ingestion (30min intervals)
 bun ingest-manager.ts status        # System health check
 bun ingest-manager.ts cleanup       # Clean unhealthy article groups
 
