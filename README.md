@@ -4,14 +4,14 @@ OpenBias is a comprehensive news bias analysis platform inspired by Ground News.
 
 ## Key Features
 
-- **`AI-Powered Bias Analysis`**: Multiple AI provider support for automated bias detection and sentiment analysis
-- **`Multi-Perspective Coverage`**: Track left/center/right source distribution with visual bias indicators
-- **`Blindspot Detection`**: Automated alerts for missing political perspectives in your news consumption
-- **`Advanced Story Grouping`**: Multi-algorithm similarity matching using TF-IDF, Levenshtein distance, and semantic analysis
-- **`40+ News Sources`**: Continuous ingestion from diverse outlets across the political spectrum
-- **`User Authentication`**: Personalized experiences with JWT-based security
-- **`Modern UI`**: Responsive Vue.js interface with real-time updates and CoreUI components
-- **`Real-time Processing`**: Optimized pipeline with configurable development limits
+- **AI-Powered Bias Analysis**: Multiple AI provider support for automated bias detection and sentiment analysis
+- **Multi-Perspective Coverage**: Track left/center/right source distribution with visual bias indicators
+- **Blindspot Detection**: Automated alerts for missing political perspectives in your news consumption
+- **Advanced Story Grouping**: Multi-algorithm similarity matching using TF-IDF, Levenshtein distance, and semantic analysis
+- **40+ News Sources**: Continuous ingestion from diverse outlets across the political spectrum
+- **User Authentication**: Personalized experiences with JWT-based security
+- **Modern UI**: Responsive Vue.js interface with real-time updates and CoreUI components
+- **Real-time Processing**: Optimized pipeline with configurable development limits
 
 ## Architecture
 
