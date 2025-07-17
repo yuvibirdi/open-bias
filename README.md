@@ -110,7 +110,7 @@ bun --filter ./packages/enrich-worker run dev # AI analysis
 
 ### 4. Development Configuration
 
-For faster development, edit processing limits in `packages/enrich-worker/src/index.ts`:
+For faster development, processing limits for the grouping pipline `packages/enrich-worker/src/index.ts` are set to:
 
 ```typescript
 const DEV_ARTICLE_LIMIT: number = 20;     // Articles to process (20 = quick testing)
