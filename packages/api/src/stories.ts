@@ -1,77 +1,218 @@
 import { Hono } from "hono";
 import { db, articles, sources, articleGroups, blindspots } from "@open-bias/db";
 import { eq, desc, and, sql, count, avg } from "drizzle-orm";
+import { redis, CacheKeys, CacheTTL } from "./redis";
 
 const app = new Hono();
+
+// Development toggle - set to false for production to only show grouped stories
+const SHOW_UNGROUPED_ARTICLES = true;
 
 // Elasticsearch configuration
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'articles';
 
+// Initialize Redis connection
+redis.connect().then((connected) => {
+  if (connected) {
+    console.log('Redis caching enabled for stories API');
+  } else {
+    console.log('Redis unavailable, running without cache');
+  }
+});
+
 // Get trending stories with coverage analysis
 app.get("/api/stories/trending", async (c) => {
   try {
     const limit = Number(c.req.query("limit") || 20);
-    const timeframe = c.req.query("timeframe") || "24h";
+    const timeframe = c.req.query("timeframe") || "30d";
+    const offset = Number(c.req.query("offset") || 0);
+    const coverage = c.req.query("coverage") || "";
     
-    // Calculate date threshold based on timeframe
-    const hoursBack = timeframe === "1h" ? 1 : timeframe === "6h" ? 6 : timeframe === "24h" ? 24 : 168; // default to week
-    const dateThreshold = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+    // Try to get from cache first (only for first page)
+    const cacheKey = CacheKeys.stories.trending(timeframe, limit);
+    const shouldCache = false; // Disable cache for debugging
+    
+    const result = shouldCache 
+      ? await redis.cache(cacheKey, async () => {
+          return await fetchTrendingStories(timeframe, limit, offset, coverage);
+        }, CacheTTL.MEDIUM)
+      : await fetchTrendingStories(timeframe, limit, offset, coverage);
 
-    const rawStories = await db
-      .select({
-        id: articleGroups.id,
-        title: articleGroups.name,
-        neutralSummary: articleGroups.neutralSummary,
-        totalArticles: sql<number>`COUNT(${articles.id})`,
-        leftCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'left' THEN 1 ELSE 0 END)`,
-        centerCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'center' THEN 1 ELSE 0 END)`,
-        rightCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'right' THEN 1 ELSE 0 END)`,
-        coverageScore: sql<number>`(COUNT(DISTINCT ${sources.bias}) * 100.0 / 3.0)`,
-        firstReported: sql<Date>`MIN(${articles.published})`,
-        lastUpdated: sql<Date>`MAX(${articles.published})`,
-        mostUnbiasedArticleId: articleGroups.mostUnbiasedArticleId,
-        // Get the first available image from any article in the group
-        imageUrl: sql<string>`(
-          SELECT ${articles.imageUrl} 
-          FROM ${articles} 
-          WHERE ${articles.groupId} = ${articleGroups.id} 
-            AND ${articles.imageUrl} IS NOT NULL 
-            AND ${articles.imageUrl} != '' 
-            AND ${articles.imageUrl} != 'null'
-          LIMIT 1
-        )`,
-      })
-      .from(articleGroups)
-      .innerJoin(articles, eq(articles.groupId, articleGroups.id))
-      .innerJoin(sources, eq(articles.sourceId, sources.id))
-      .where(sql`${articles.published} >= ${dateThreshold}`)
-      .groupBy(articleGroups.id)
-      .having(sql`COUNT(${articles.id}) >= 2`) // Only stories with multiple sources
-      .orderBy(desc(sql`COUNT(${articles.id})`), desc(sql`MAX(${articles.published})`))
-      .limit(limit);
-
-    // Convert string numbers to actual numbers for frontend compatibility
-    const stories = rawStories.map(story => ({
-      ...story,
-      totalArticles: Number(story.totalArticles),
-      leftCoverage: Number(story.leftCoverage),
-      centerCoverage: Number(story.centerCoverage),
-      rightCoverage: Number(story.rightCoverage),
-      coverageScore: Number(story.coverageScore),
-    }));
-
-    return c.json({ stories });
+    return c.json({ 
+      stories: result.stories,
+      total: result.total,
+      hasMore: result.stories.length === limit
+    });
   } catch (error) {
     console.error("Error fetching trending stories:", error);
     return c.json({ error: "Failed to fetch trending stories" }, 500);
   }
 });
 
+async function fetchTrendingStories(timeframe: string, limit: number, offset: number = 0, coverage: string = "") {
+  // Calculate date threshold based on timeframe - make it more lenient for development
+  const hoursBack = timeframe === "1h" ? 1 : 
+                   timeframe === "6h" ? 6 : 
+                   timeframe === "24h" ? 24 : 
+                   timeframe === "7d" ? 168 : 
+                   720; // default to 30 days for development
+                   
+  const dateThreshold = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+
+  console.log(`📊 Fetching trending stories since: ${dateThreshold.toISOString()}`);
+
+  // Get total count first
+  const totalQuery = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${articleGroups.id})` })
+    .from(articleGroups)
+    .innerJoin(articles, eq(articles.groupId, articleGroups.id))
+    .innerJoin(sources, eq(articles.sourceId, sources.id))
+    .where(sql`${articles.published} >= ${dateThreshold}`)
+    .having(sql`COUNT(${articles.id}) >= 1`);
+
+  const total = Number(totalQuery[0]?.count || 0);
+
+  const rawStories = await db
+    .select({
+      id: articleGroups.id,
+      title: articleGroups.name,
+      neutralSummary: articleGroups.neutralSummary,
+      totalArticles: sql<number>`COUNT(${articles.id})`,
+      leftCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'left' THEN 1 ELSE 0 END)`,
+      centerCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'center' THEN 1 ELSE 0 END)`,
+      rightCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'right' THEN 1 ELSE 0 END)`,
+      coverageScore: sql<number>`(COUNT(DISTINCT ${sources.bias}) * 100.0 / 3.0)`,
+      firstReported: sql<Date>`MIN(${articles.published})`,
+      lastUpdated: sql<Date>`MAX(${articles.published})`,
+      mostUnbiasedArticleId: articleGroups.mostUnbiasedArticleId,
+      // Get the first available image from any article in the group
+      imageUrl: sql<string>`(
+        SELECT ${articles.imageUrl} 
+        FROM ${articles} 
+        WHERE ${articles.groupId} = ${articleGroups.id} 
+          AND ${articles.imageUrl} IS NOT NULL 
+          AND ${articles.imageUrl} != '' 
+          AND ${articles.imageUrl} != 'null'
+        LIMIT 1
+      )`,
+    })
+    .from(articleGroups)
+    .innerJoin(articles, eq(articles.groupId, articleGroups.id))
+    .innerJoin(sources, eq(articles.sourceId, sources.id))
+    .where(sql`${articles.published} >= ${dateThreshold}`)
+    .groupBy(articleGroups.id)
+    .having(sql`COUNT(${articles.id}) >= 1`) // Allow single-source stories for development
+    .orderBy(desc(sql`COUNT(${articles.id})`), desc(sql`MAX(${articles.published})`))
+    .limit(limit)
+    .offset(offset);
+
+  console.log(`📊 Found ${rawStories.length} trending stories (offset: ${offset}, total: ${total})`);
+
+  // Convert string numbers to actual numbers for frontend compatibility
+  const stories = rawStories.map(story => ({
+    ...story,
+    totalArticles: Number(story.totalArticles),
+    leftCoverage: Number(story.leftCoverage),
+    centerCoverage: Number(story.centerCoverage),
+    rightCoverage: Number(story.rightCoverage),
+    coverageScore: Number(story.coverageScore),
+  }));
+
+  // If coverage=all is requested and toggle is enabled, also include ungrouped articles
+  if (SHOW_UNGROUPED_ARTICLES && coverage === "all") {
+    // Get recent ungrouped articles
+    const ungroupedArticles = await db
+      .select({
+        id: articles.id,
+        title: articles.title,
+        summary: articles.summary,
+        imageUrl: articles.imageUrl,
+        published: articles.published,
+        sourceBias: sources.bias,
+      })
+      .from(articles)
+      .innerJoin(sources, eq(articles.sourceId, sources.id))
+      .where(and(
+        sql`${articles.published} >= ${dateThreshold}`,
+        sql`${articles.groupId} IS NULL`
+      ))
+      .orderBy(desc(articles.published))
+      .limit(limit)
+      .offset(offset);
+
+    // Convert ungrouped articles to story format
+    const ungroupedStories = ungroupedArticles.map((article, index) => {
+      const bias = article.sourceBias || 'unknown';
+      const leftCoverage = bias === 'left' ? 1 : 0;
+      const centerCoverage = bias === 'center' ? 1 : 0;
+      const rightCoverage = bias === 'right' ? 1 : 0;
+      const coverageScore = bias === 'unknown' ? 0 : 33;
+
+      return {
+        id: `ungrouped_${article.id}`,
+        title: article.title,
+        neutralSummary: article.summary,
+        totalArticles: 1,
+        leftCoverage,
+        centerCoverage,
+        rightCoverage,
+        coverageScore,
+        firstReported: article.published,
+        lastUpdated: article.published,
+        mostUnbiasedArticleId: null,
+        imageUrl: article.imageUrl && article.imageUrl !== 'null' ? article.imageUrl : null,
+      };
+    });
+
+    // Mix grouped and ungrouped stories
+    stories.push(...ungroupedStories);
+  }
+
+  return { stories, total };
+}
+
+// Search stories with advanced filters
+app.get("/api/stories/search", async (c) => {
+  try {
+    const query = c.req.query("q") || "";
+    const coverage = c.req.query("coverage") || "";
+    const timeframe = c.req.query("timeframe") || "30d";
+    const limit = Number(c.req.query("limit") || 20);
+    const offset = Number(c.req.query("offset") || 0);
+
+    // Try to get from cache first (only for first page)
+    const cacheKey = CacheKeys.stories.search(query, timeframe, coverage, limit);
+    const shouldCache = offset === 0; // Only cache first page
+    
+    const result = shouldCache 
+      ? await redis.cache(cacheKey, async () => {
+          return await searchStoriesInElasticsearch(query, coverage, timeframe, limit, offset);
+        }, CacheTTL.SHORT)
+      : await searchStoriesInElasticsearch(query, coverage, timeframe, limit, offset);
+
+    return c.json({
+      stories: result.stories,
+      total: result.total,
+      aggregations: result.aggregations,
+      hasMore: result.stories.length === limit && (offset + limit) < result.total,
+    });
+  } catch (error) {
+    console.error("Error searching stories:", error);
+    return c.json({ error: "Failed to search stories" }, 500);
+  }
+});
+
 // Get story details with all articles and bias analysis
 app.get("/api/stories/:id", async (c) => {
   try {
-    const storyId = Number(c.req.param('id'));
+    const storyIdParam = c.req.param('id');
+    const storyId = Number(storyIdParam);
+    
+    // Validate storyId
+    if (isNaN(storyId) || storyId <= 0) {
+      return c.json({ error: "Invalid story ID" }, 400);
+    }
     
     let story: any = null;
     let storyArticles: any[] = [];
@@ -272,125 +413,463 @@ app.get("/api/analytics/bias-distribution", async (c) => {
   }
 });
 
-// Search stories with advanced filters
-app.get("/api/stories/search", async (c) => {
+// Get analytics overview for dashboard metrics
+app.get("/api/analytics/overview", async (c) => {
   try {
-    const query = c.req.query("q") || "";
-    const coverage = c.req.query("coverage"); // "full", "partial", "limited"
-    const timeframe = c.req.query("timeframe") || "7d";
-    const limit = Number(c.req.query("limit") || 20);
-
-    let searchQuery = {
-      bool: {
-        must: [] as Record<string, unknown>[],
-        filter: [] as Record<string, unknown>[],
-      }
-    };
-
-    if (query) {
-      searchQuery.bool.must.push({
-        multi_match: {
-          query,
-          fields: ["title^2", "summary", "neutralSummary"],
-        }
-      });
-    } else {
-      searchQuery.bool.must.push({ match_all: {} });
-    }
-
-    // Add time filter
-    const hoursBack = timeframe === "24h" ? 24 : timeframe === "7d" ? 168 : 720;
+    const timeframe = c.req.query("timeframe") || "30d";
+    const hoursBack = timeframe === "1h" ? 1 : 
+                     timeframe === "6h" ? 6 : 
+                     timeframe === "24h" ? 24 : 
+                     timeframe === "7d" ? 168 : 
+                     720; // 30 days
     const dateThreshold = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
-    
-    searchQuery.bool.filter.push({
-      range: {
-        published: {
-          gte: dateThreshold.toISOString(),
-        }
+
+    // Get total active stories (story groups)
+    const [totalStoriesResult] = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${articleGroups.id})` })
+      .from(articleGroups)
+      .innerJoin(articles, eq(articles.groupId, articleGroups.id))
+      .where(sql`${articles.published} >= ${dateThreshold}`);
+
+    const totalStories = Number(totalStoriesResult?.count || 0);
+
+    // Get coverage statistics by calculating bias coverage per group
+    const coverageResults = await db
+      .select({
+        groupId: articleGroups.id,
+        leftCount: sql<number>`SUM(CASE WHEN ${sources.bias} = 'left' THEN 1 ELSE 0 END)`,
+        centerCount: sql<number>`SUM(CASE WHEN ${sources.bias} = 'center' THEN 1 ELSE 0 END)`,
+        rightCount: sql<number>`SUM(CASE WHEN ${sources.bias} = 'right' THEN 1 ELSE 0 END)`,
+      })
+      .from(articleGroups)
+      .innerJoin(articles, eq(articles.groupId, articleGroups.id))
+      .innerJoin(sources, eq(articles.sourceId, sources.id))
+      .where(sql`${articles.published} >= ${dateThreshold}`)
+      .groupBy(articleGroups.id);
+
+    // Calculate average coverage percentage and detect blindspots
+    let totalCoverageScore = 0;
+    let validGroups = 0;
+    let blindspotCount = 0;
+
+    coverageResults.forEach(group => {
+      const left = Number(group.leftCount || 0);
+      const center = Number(group.centerCount || 0);
+      const right = Number(group.rightCount || 0);
+      
+      const biasTypes = (left > 0 ? 1 : 0) + (center > 0 ? 1 : 0) + (right > 0 ? 1 : 0);
+      const coveragePercentage = Math.round((biasTypes / 3) * 100);
+      
+      // Count as blindspot if missing any perspective (less than full coverage)
+      if (biasTypes < 3 && biasTypes > 0) {
+        blindspotCount++;
       }
+      
+      totalCoverageScore += coveragePercentage;
+      validGroups++;
     });
 
-    // Search in Elasticsearch
-    const response = await fetch(`${ELASTIC_URL}/${ELASTIC_INDEX}/_search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: searchQuery,
-        size: limit,
-        sort: [{ published: { order: "desc" } }],
-        aggs: {
-          by_group: {
-            terms: { field: "groupId" },
-            aggs: {
-              bias_distribution: {
-                terms: { field: "sourceBias" }
-              }
+    const averageCoverage = validGroups > 0 ? Math.round(totalCoverageScore / validGroups) : 0;
+
+    return c.json({
+      totalStories,
+      averageCoverage,
+      blindspotCount,
+      timeframe
+    });
+  } catch (error) {
+    console.error("Error fetching analytics overview:", error);
+    return c.json({ error: "Failed to fetch analytics overview" }, 500);
+  }
+});
+
+// Get detailed blindspot information
+app.get("/api/analytics/blindspots", async (c) => {
+  try {
+    const timeframe = c.req.query("timeframe") || "30d";
+    const hoursBack = timeframe === "1h" ? 1 : 
+                     timeframe === "6h" ? 6 : 
+                     timeframe === "24h" ? 24 : 
+                     timeframe === "7d" ? 168 : 
+                     720; // 30 days
+    const dateThreshold = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+
+    // Get coverage statistics by calculating bias coverage per group
+    const coverageResults = await db
+      .select({
+        groupId: articleGroups.id,
+        groupName: articleGroups.name,
+        leftCount: sql<number>`SUM(CASE WHEN ${sources.bias} = 'left' THEN 1 ELSE 0 END)`,
+        centerCount: sql<number>`SUM(CASE WHEN ${sources.bias} = 'center' THEN 1 ELSE 0 END)`,
+        rightCount: sql<number>`SUM(CASE WHEN ${sources.bias} = 'right' THEN 1 ELSE 0 END)`,
+        totalArticles: sql<number>`COUNT(${articles.id})`,
+        firstReported: sql<Date>`MIN(${articles.published})`,
+        lastUpdated: sql<Date>`MAX(${articles.published})`,
+      })
+      .from(articleGroups)
+      .innerJoin(articles, eq(articles.groupId, articleGroups.id))
+      .innerJoin(sources, eq(articles.sourceId, sources.id))
+      .where(sql`${articles.published} >= ${dateThreshold}`)
+      .groupBy(articleGroups.id, articleGroups.name);
+
+    // Identify stories with coverage gaps
+    const blindspots = coverageResults
+      .map(group => {
+        const left = Number(group.leftCount || 0);
+        const center = Number(group.centerCount || 0);
+        const right = Number(group.rightCount || 0);
+        
+        const biasTypes = (left > 0 ? 1 : 0) + (center > 0 ? 1 : 0) + (right > 0 ? 1 : 0);
+        
+        // Only include if there's a coverage gap (missing at least one perspective)
+        if (biasTypes < 3 && biasTypes > 0) {
+          const missingPerspectives = [];
+          if (left === 0) missingPerspectives.push('left');
+          if (center === 0) missingPerspectives.push('center');
+          if (right === 0) missingPerspectives.push('right');
+          
+          const coveragePercentage = Math.round((biasTypes / 3) * 100);
+          
+          return {
+            groupId: group.groupId,
+            title: group.groupName,
+            coveragePercentage,
+            totalArticles: Number(group.totalArticles),
+            missingPerspectives,
+            currentCoverage: {
+              left: left,
+              center: center,
+              right: right
+            },
+            firstReported: group.firstReported,
+            lastUpdated: group.lastUpdated,
+            severity: biasTypes === 1 ? 'high' : 'medium' // High if only one perspective, medium if two
+          };
+        }
+        return null;
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => a.coveragePercentage - b.coveragePercentage); // Sort by lowest coverage first
+
+    return c.json({
+      blindspots,
+      totalBlindspots: blindspots.length,
+      timeframe
+    });
+  } catch (error) {
+    console.error("Error fetching blindspot details:", error);
+    return c.json({ error: "Failed to fetch blindspot details" }, 500);
+  }
+});
+
+async function searchStoriesInElasticsearch(query: string, coverage: string, timeframe: string, limit: number, offset: number = 0) {
+  let searchQuery: any = {
+    bool: {
+      must: [] as Record<string, unknown>[],
+      filter: [] as Record<string, unknown>[],
+      should: [] as Record<string, unknown>[],
+      minimum_should_match: 0,
+    }
+  };
+
+  if (query) {
+    searchQuery.bool.must.push({
+      multi_match: {
+        query,
+        fields: ["title^2", "summary", "neutralSummary"],
+        type: "best_fields"
+      }
+    });
+  } else {
+    searchQuery.bool.must.push({ match_all: {} });
+  }
+
+  // Add time filter - make it more lenient for development
+  const hoursBack = timeframe === "24h" ? 24 : 
+                   timeframe === "7d" ? 168 : 
+                   720; // 30 days for development
+  const dateThreshold = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+  
+  // Temporarily disable date filtering for debugging
+  // searchQuery.bool.filter.push({
+  //   range: {
+  //     published: {
+  //       gte: dateThreshold.toISOString(),
+  //     }
+  //   }
+  // });
+
+  console.log(`🔍 Searching Elasticsearch with query: ${JSON.stringify(searchQuery)}`);
+
+  // Search in Elasticsearch
+  const response = await fetch(`${ELASTIC_URL}/${ELASTIC_INDEX}/_search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: searchQuery,
+      from: offset,
+      size: limit * 3, // Get more articles to account for grouping
+      sort: [{ published: { order: "desc" } }],
+      aggs: {
+        by_group: {
+          terms: { field: "groupId" },
+          aggs: {
+            bias_distribution: {
+              terms: { field: "sourceBias" }
             }
           }
         }
-      })
-    });
-
-    const results = await response.json();
-    
-    // Process results to group by story and calculate coverage
-    const storiesMap = new Map();
-    
-    for (const hit of results.hits.hits) {
-      const article = hit._source;
-      const groupId = article.groupId;
-      
-      if (!storiesMap.has(groupId)) {
-        storiesMap.set(groupId, {
-          id: groupId,
-          articles: [],
-          biases: new Set(),
-        });
       }
-      
-      const story = storiesMap.get(groupId);
-      story.articles.push(article);
-      story.biases.add(article.sourceBias);
-    }
+    })
+  });
 
-    // Convert to array and add coverage scores
-    const stories = Array.from(storiesMap.values()).map(story => {
-      // Find first article with a valid image
-      const imageUrl = story.articles.find((article: any) => 
-        article.imageUrl && 
-        article.imageUrl.trim() && 
-        article.imageUrl !== 'null'
-      )?.imageUrl || null;
+  if (!response.ok) {
+    throw new Error(`Elasticsearch search failed: ${response.status}`);
+  }
+
+  const results = await response.json();
+  console.log(`🔍 Elasticsearch returned ${results.hits.total.value} articles`);
+
+  // If Elasticsearch returns no results, fall back to database search
+  if (results.hits.total.value === 0 && query) {
+    console.log(`🔍 No Elasticsearch results for "${query}", falling back to database search`);
+    return await searchStoriesInDatabase(query, coverage, timeframe, limit, offset);
+  }
+
+  // Group articles by story
+  const groupedArticles = new Map();
+  const ungroupedArticles = [];
+  
+  for (const hit of results.hits.hits) {
+    const article = hit._source;
+    const groupId = article.groupId;
+    
+    // Handle ungrouped articles - only include if coverage is "all" and toggle is enabled
+    if (!groupId) {
+      if (SHOW_UNGROUPED_ARTICLES && coverage === "all") {
+        ungroupedArticles.push(article);
+      }
+      continue;
+    }
+    
+    if (!groupedArticles.has(groupId)) {
+      groupedArticles.set(groupId, {
+        id: groupId,
+        title: article.title,
+        neutralSummary: article.summary,
+        articles: [],
+        biases: new Set(),
+        firstReported: new Date(article.published),
+        lastUpdated: new Date(article.published),
+        imageUrl: null,
+      });
+    }
+    
+    const story = groupedArticles.get(groupId);
+    story.articles.push(article);
+    story.biases.add(article.sourceBias);
+    
+    // Update timestamps
+    const articleDate = new Date(article.published);
+    if (articleDate < story.firstReported) story.firstReported = articleDate;
+    if (articleDate > story.lastUpdated) story.lastUpdated = articleDate;
+    
+    // Set image if available
+    if (!story.imageUrl && article.imageUrl && article.imageUrl !== 'null') {
+      story.imageUrl = article.imageUrl;
+    }
+  }
+
+  // Convert grouped articles to stories format
+  const stories = Array.from(groupedArticles.values()).map(story => {
+    const leftCoverage = story.articles.filter((a: any) => a.sourceBias === 'left').length;
+    const centerCoverage = story.articles.filter((a: any) => a.sourceBias === 'center').length;
+    const rightCoverage = story.articles.filter((a: any) => a.sourceBias === 'right').length;
+    const coverageScore = Math.round((story.biases.size / 3) * 100);
+
+    return {
+      id: story.id,
+      title: story.title,
+      neutralSummary: story.neutralSummary,
+      totalArticles: story.articles.length,
+      leftCoverage,
+      centerCoverage,
+      rightCoverage,
+      coverageScore,
+      firstReported: story.firstReported,
+      lastUpdated: story.lastUpdated,
+      mostUnbiasedArticleId: null,
+      imageUrl: story.imageUrl,
+    };
+  });
+
+  // Add ungrouped articles as individual stories only if toggle is enabled and coverage is "all"
+  const ungroupedStories = (SHOW_UNGROUPED_ARTICLES && coverage === "all") ? 
+    ungroupedArticles.map((article, index) => {
+      const bias = article.sourceBias || 'unknown';
+      const leftCoverage = bias === 'left' ? 1 : 0;
+      const centerCoverage = bias === 'center' ? 1 : 0;
+      const rightCoverage = bias === 'right' ? 1 : 0;
+      const coverageScore = bias === 'unknown' ? 0 : 33; // Single perspective = 33%
 
       return {
-        ...story,
-        totalArticles: story.articles.length,
-        coverageScore: Math.round((story.biases.size / 3) * 100),
-        biases: Array.from(story.biases),
-        imageUrl: imageUrl,
+        id: `ungrouped_${article.id || index}`, // Use article ID or index for unique identifier
+        title: article.title,
+        neutralSummary: article.summary,
+        totalArticles: 1,
+        leftCoverage,
+        centerCoverage,
+        rightCoverage,
+        coverageScore,
+        firstReported: new Date(article.published),
+        lastUpdated: new Date(article.published),
+        mostUnbiasedArticleId: null,
+        imageUrl: article.imageUrl && article.imageUrl !== 'null' ? article.imageUrl : null,
+      };
+    }) : [];
+
+  // Combine grouped and ungrouped stories
+  const allStories = [...stories, ...ungroupedStories];
+
+  // Apply coverage filter
+  let filteredStories = allStories;
+  if (coverage === "full") {
+    filteredStories = allStories.filter(s => s.coverageScore >= 100);
+  } else if (coverage === "partial") {
+    filteredStories = allStories.filter(s => s.coverageScore >= 50 && s.coverageScore < 100);
+  } else if (coverage === "limited") {
+    filteredStories = allStories.filter(s => s.coverageScore < 50);
+  }
+
+  return {
+    stories: filteredStories.slice(0, limit),
+    total: filteredStories.length,
+    aggregations: results.aggregations,
+  };
+}
+
+async function searchStoriesInDatabase(query: string, coverage: string, timeframe: string, limit: number, offset: number = 0) {
+  console.log(`🗄️ Searching database for: "${query}"`);
+  
+  // Calculate date threshold
+  const hoursBack = timeframe === "24h" ? 24 : 
+                   timeframe === "7d" ? 168 : 
+                   720; // 30 days for development
+  const dateThreshold = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+
+  // Search in article groups first
+  const groupedStories = await db
+    .select({
+      id: articleGroups.id,
+      title: articleGroups.name,
+      neutralSummary: articleGroups.neutralSummary,
+      totalArticles: sql<number>`COUNT(${articles.id})`,
+      leftCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'left' THEN 1 ELSE 0 END)`,
+      centerCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'center' THEN 1 ELSE 0 END)`,
+      rightCoverage: sql<number>`SUM(CASE WHEN ${sources.bias} = 'right' THEN 1 ELSE 0 END)`,
+      coverageScore: sql<number>`(COUNT(DISTINCT ${sources.bias}) * 100.0 / 3.0)`,
+      firstReported: sql<Date>`MIN(${articles.published})`,
+      lastUpdated: sql<Date>`MAX(${articles.published})`,
+      mostUnbiasedArticleId: articleGroups.mostUnbiasedArticleId,
+      imageUrl: sql<string>`(
+        SELECT ${articles.imageUrl} 
+        FROM ${articles} 
+        WHERE ${articles.groupId} = ${articleGroups.id} 
+          AND ${articles.imageUrl} IS NOT NULL 
+          AND ${articles.imageUrl} != '' 
+          AND ${articles.imageUrl} != 'null'
+        LIMIT 1
+      )`,
+    })
+    .from(articleGroups)
+    .innerJoin(articles, eq(articles.groupId, articleGroups.id))
+    .innerJoin(sources, eq(articles.sourceId, sources.id))
+    .where(and(
+      sql`${articleGroups.name} LIKE ${`%${query}%`}`,
+      sql`${articles.published} >= ${dateThreshold}`
+    ))
+    .groupBy(articleGroups.id)
+    .having(sql`COUNT(${articles.id}) >= 1`)
+    .orderBy(desc(sql`COUNT(${articles.id})`), desc(sql`MAX(${articles.published})`))
+    .limit(limit)
+    .offset(offset);
+
+  const stories = groupedStories.map(story => ({
+    ...story,
+    totalArticles: Number(story.totalArticles),
+    leftCoverage: Number(story.leftCoverage),
+    centerCoverage: Number(story.centerCoverage),
+    rightCoverage: Number(story.rightCoverage),
+    coverageScore: Number(story.coverageScore),
+  }));
+
+  // Also search ungrouped articles if coverage is "all"
+  let ungroupedStories: any[] = [];
+  if (SHOW_UNGROUPED_ARTICLES && coverage === "all") {
+    const ungroupedArticles = await db
+      .select({
+        id: articles.id,
+        title: articles.title,
+        summary: articles.summary,
+        imageUrl: articles.imageUrl,
+        published: articles.published,
+        sourceBias: sources.bias,
+      })
+      .from(articles)
+      .innerJoin(sources, eq(articles.sourceId, sources.id))
+      .where(and(
+        sql`${articles.title} LIKE ${`%${query}%`}`,
+        sql`${articles.published} >= ${dateThreshold}`,
+        sql`${articles.groupId} IS NULL`
+      ))
+      .orderBy(desc(articles.published))
+      .limit(limit)
+      .offset(offset);
+
+    ungroupedStories = ungroupedArticles.map((article) => {
+      const bias = article.sourceBias || 'unknown';
+      const leftCoverage = bias === 'left' ? 1 : 0;
+      const centerCoverage = bias === 'center' ? 1 : 0;
+      const rightCoverage = bias === 'right' ? 1 : 0;
+      const coverageScore = bias === 'unknown' ? 0 : 33;
+
+      return {
+        id: `ungrouped_${article.id}`,
+        title: article.title,
+        neutralSummary: article.summary,
+        totalArticles: 1,
+        leftCoverage,
+        centerCoverage,
+        rightCoverage,
+        coverageScore,
+        firstReported: article.published,
+        lastUpdated: article.published,
+        mostUnbiasedArticleId: null,
+        imageUrl: article.imageUrl && article.imageUrl !== 'null' ? article.imageUrl : null,
       };
     });
-
-    // Apply coverage filter
-    let filteredStories = stories;
-    if (coverage === "full") {
-      filteredStories = stories.filter(s => s.coverageScore >= 100);
-    } else if (coverage === "partial") {
-      filteredStories = stories.filter(s => s.coverageScore >= 50 && s.coverageScore < 100);
-    } else if (coverage === "limited") {
-      filteredStories = stories.filter(s => s.coverageScore < 50);
-    }
-
-    return c.json({
-      stories: filteredStories.slice(0, limit),
-      total: filteredStories.length,
-      aggregations: results.aggregations,
-    });
-  } catch (error) {
-    console.error("Error searching stories:", error);
-    return c.json({ error: "Failed to search stories" }, 500);
   }
-});
+
+  const allStories = [...stories, ...ungroupedStories];
+
+  // Apply coverage filter
+  let filteredStories = allStories;
+  if (coverage === "full") {
+    filteredStories = allStories.filter(s => s.coverageScore >= 100);
+  } else if (coverage === "partial") {
+    filteredStories = allStories.filter(s => s.coverageScore >= 50 && s.coverageScore < 100);
+  } else if (coverage === "limited") {
+    filteredStories = allStories.filter(s => s.coverageScore < 50);
+  }
+
+  console.log(`🗄️ Database search found ${filteredStories.length} results`);
+
+  return {
+    stories: filteredStories.slice(0, limit),
+    total: filteredStories.length,
+    aggregations: {},
+  };
+}
 
 // Create or update story groups based on article similarity
 app.post("/api/stories/group-articles", async (c) => {

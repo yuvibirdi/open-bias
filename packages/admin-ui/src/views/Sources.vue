@@ -37,8 +37,8 @@
                     </a>
                   </CTableDataCell>
                   <CTableDataCell>
-                    <CBadge :color="source.bias === 1 ? 'primary' : source.bias === 3 ? 'danger' : 'success'">
-                      {{ source.bias === 1 ? 'Left' : source.bias === 3 ? 'Right' : 'Center' }}
+                    <CBadge :color="source.bias === 'left' ? 'primary' : source.bias === 'right' ? 'danger' : 'success'">
+                      {{ source.bias === 'left' ? 'Left' : source.bias === 'right' ? 'Right' : 'Center' }}
                     </CBadge>
                   </CTableDataCell>
                   <CTableDataCell>

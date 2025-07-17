@@ -1,6 +1,6 @@
 import { useAuth } from './useAuth'
 
-const base = import.meta.env.VITE_API_URL || ''
+const base = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export interface Article {
   id: number
@@ -16,7 +16,7 @@ export interface Source {
   id: number
   name: string
   rss: string
-  bias: number
+  bias: string  // Changed from number to string to match API response
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

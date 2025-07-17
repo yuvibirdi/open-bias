@@ -152,9 +152,7 @@ async function seedDatabase() {
           // eq(articles.indexed, 0) // if we only want to update non-indexed or already marked ones
         )! // Non-null assertion for 'or' result
       ];
-
-      const articlesToUpdate = await db.select({ id: articles.id, bias: articles.bias, indexed: articles.indexed })
-        .from(articles)
+const articlesToUpdate = await db.select({ id: articles.id, bias: articles.bias, indexed: articles.indexed }) .from(articles)
         .where(and(...conditions));
 
       if (articlesToUpdate.length > 0) {

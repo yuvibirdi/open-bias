@@ -1,41 +1,5 @@
 <template>
   <div class="story-feed">
-    <!-- Header Section -->
-    <div class="header-section">
-      <h1 class="feed-title">Breaking News & Analysis</h1>
-      <div class="feed-controls">
-        <div class="timeframe-selector">
-          <label>Time Range:</label>
-          <select v-model="selectedTimeframe" @change="loadStories">
-            <option value="1h">Last Hour</option>
-            <option value="6h">Last 6 Hours</option>
-            <option value="24h">Last 24 Hours</option>
-            <option value="7d">Last Week</option>
-          </select>
-        </div>
-        
-        <div class="coverage-filter">
-          <label>Coverage:</label>
-          <select v-model="selectedCoverage" @change="loadStories">
-            <option value="">All Stories</option>
-            <option value="full">Full Coverage (3 Perspectives)</option>
-            <option value="partial">Partial Coverage</option>
-            <option value="limited">Limited Coverage</option>
-          </select>
-        </div>
-
-        <div class="search-box">
-          <input 
-            v-model="searchQuery" 
-            @keyup.enter="searchStories"
-            placeholder="Search stories..." 
-            type="text"
-          />
-          <button @click="searchStories" class="search-btn">Search</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Loading State -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -68,7 +32,7 @@
           Refresh
         </button>
         <p class="text-sm text-gray-500">
-          Try running <code class="bg-gray-100 px-2 py-1 rounded">bun db:load_new_data</code> to ingest articles
+          Try running <code class="bg-gray-100 px-2 py-1 rounded">bun db:setup</code> to ingest articles
         </p>
       </div>
     </div>
@@ -200,11 +164,12 @@ const router = useRouter()
 // Reactive state
 const stories = ref<Story[]>([])
 const loading = ref(false)
-const selectedTimeframe = ref(props.timeframe || '24h')
-const selectedCoverage = ref(props.coverageFilter || '')
+const selectedTimeframe = ref(props.timeframe || '30d')
+const selectedCoverage = ref(props.coverageFilter || 'all')
 const searchQuery = ref(props.searchQuery || '')
 const hasMore = ref(true)
-const currentPage = ref(1)
+const currentOffset = ref(0)
+const pageSize = 20
 
 // Watch for prop changes
 watch(() => props.searchQuery, (newValue) => {
@@ -239,7 +204,7 @@ const loadStories = async (reset = true) => {
   
   if (reset) {
     stories.value = []
-    currentPage.value = 1
+    currentOffset.value = 0
     hasMore.value = true
   }
 
@@ -247,13 +212,11 @@ const loadStories = async (reset = true) => {
   
   try {
     const params = new URLSearchParams({
-      limit: '20',
+      limit: pageSize.toString(),
       timeframe: selectedTimeframe.value,
+      offset: currentOffset.value.toString(),
+      coverage: selectedCoverage.value || 'all', // Always include coverage
     })
-    
-    if (selectedCoverage.value) {
-      params.append('coverage', selectedCoverage.value)
-    }
 
     const endpoint = isSearchMode.value ? '/api/stories/search' : '/api/stories/trending'
     
@@ -271,7 +234,11 @@ const loadStories = async (reset = true) => {
       stories.value.push(...(response.stories || []))
     }
     
-    hasMore.value = (response.stories || []).length === 20
+    // Update pagination state
+    hasMore.value = response.hasMore || false
+    if (!reset) {
+      currentOffset.value += pageSize
+    }
     
   } catch (error) {
     console.error('Error loading stories:', error)

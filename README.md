@@ -1,22 +1,18 @@
 # OpenBias
-
 OpenBias is a comprehensive news bias analysis platform inspired by Ground News. It intelligently aggregates articles from 40+ diverse news sources, performs AI-powered bias analysis, and presents multi-perspective coverage through a modern web interface. The system helps users discover news blindspots and understand media coverage patterns across the political spectrum.
 
 ## Key Features
-
 - **AI-Powered Bias Analysis**: Multiple AI provider support for automated bias detection and sentiment analysis
 - **Multi-Perspective Coverage**: Track left/center/right source distribution with visual bias indicators
 - **Blindspot Detection**: Automated alerts for missing political perspectives in your news consumption
-- **Advanced Story Grouping**: Multi-algorithm similarity matching using TF-IDF, Levenshtein distance, and semantic analysis
+- **Advanced Story Grouping**: Multi-algorithm similarity matching using TF-IDF, Levenshtein distance, and semantic analysis using embeddings and consine similarity.
 - **40+ News Sources**: Continuous ingestion from diverse outlets across the political spectrum
 - **User Authentication**: Personalized experiences with JWT-based security
 - **Modern UI**: Responsive Vue.js interface with real-time updates and CoreUI components
 - **Real-time Processing**: Optimized pipeline with configurable development limits
 
 ## Architecture
-
 OpenBias follows a microservices architecture with separate workers for ingestion, analysis, and presentation:
-
 ```mermaid
 graph TD
     subgraph "External Sources"
@@ -32,6 +28,7 @@ graph TD
     subgraph "Data Layer"
         MySQL[(MySQL<br/>Articles & Stories)]
         ES[(Elasticsearch<br/>Search & Analytics)]
+        Redis[(Redis<br/>API Caching)]
     end
 
     subgraph "Frontend"
@@ -44,6 +41,7 @@ graph TD
     EW --> ES
     API --> MySQL
     API --> ES
+    API --> Redis
     UI --> API
 
     User[ Users] --> UI
@@ -51,28 +49,18 @@ graph TD
 
 ### Core Components
 - **`ingest-worker`**: Monitors 40+ RSS feeds, performs intelligent story grouping with quality controls, and maintains source diversity
-- **`enrich-worker`**: AI-powered bias analysis using multiple providers, sentiment detection, and Elasticsearch indexing
-- **`api`**: Hono-based REST API with JWT authentication, story endpoints, and user management
+- **`enrich-worker`**: AI-powered bias analysis using multiple providers, sentiment detection, and Elasticsearch indexing.
+- **`api`**: Hono-based REST API with JWT authentication, story endpoints, and user management with Redis caching for performance optimization
 - **`admin-ui`**: Vue 3 + TypeScript dashboard with CoreUI components, bias visualization, and user authentication and real-time story feeds with an admin dashboard
-- **`db`**: MySQL for persistent storage, Elasticsearch for advanced search and analytics
+- **`db`**: MySQL for persistent storage, Elasticsearch for advanced search and analytics, Redis for API response caching
 
 ## 🛠️ Management Commands
-
 ```bash
 # Database Management
 bun db:setup          # Complete setup: start services, migrate, seed, ingest, and analyze
 bun db:update          # Fetch new articles and run bias analysis
 bun db:update-force    # Clean old articles, fetch new ones, and run analysis
 bun db:delete          # Stop services and delete all data
-
-# Ingest Worker Management
-cd packages/ingest-worker
-bun ingest-manager.ts seed-sources  # Seed 40+ news sources
-bun ingest-manager.ts ingest        # Fetch articles from RSS feeds
-bun ingest-manager.ts enrich        # Run article grouping and analysis
-bun ingest-manager.ts schedule      # Automated ingestion (30min intervals)
-bun ingest-manager.ts status        # System health check
-bun ingest-manager.ts cleanup       # Clean unhealthy article groups
 
 # Development utilities
 bun --filter '*' run dev             # Run all services in development mode
@@ -83,7 +71,7 @@ bun --filter '*' run build           # Build all packages
 
 ### Prerequisites
 - [Bun](https://bun.sh/) - Fast JavaScript runtime and package manager
-- [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/) - For MySQL and Elasticsearch
+- [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/) - For MySQL, Elasticsearch, and Redis
 
 ### 1. Setup
 
@@ -97,7 +85,7 @@ bun install
 
 # Copy environment file and configure
 cp .env.example .env
-# Edit .env with your API keys and database settings
+
 ```
 
 ### 2. Initialize Database
@@ -114,13 +102,11 @@ bun db:setup
 bun --filter '*' run dev
 
 # Or run individual services:
-bun --filter @open-bias/api run dev          # Backend API
-bun --filter @open-bias/admin-ui run dev     # Frontend UI
-bun --filter @open-bias/ingest-worker run dev # RSS ingestion
-bun --filter @open-bias/enrich-worker run dev # AI analysis
+bun --filter ./packages/api run dev          # Backend API
+bun --filter ./packages/admin-ui run dev     # Frontend UI
+bun --filter ./packages/ingest-worker run dev # RSS ingestion
+bun --filter ./packages/enrich-worker run dev # AI analysis
 ```
-
-The application will be available at `http://localhost:5173`
 
 ### 4. Development Configuration
 
@@ -133,7 +119,39 @@ const DEV_GROUP_ANALYSIS_LIMIT: number = 5; // Groups to analyze (5 = quick test
 
 **Tip**: Use `-1` for both values in production to process all content.
 
-## 🤖 AI-Powered Bias Analysis
+<!--
+## Redis Caching System
+
+OpenBias implements intelligent Redis caching to optimize API performance and reduce database load:
+
+### Caching Strategy
+- **Multi-layer Caching**: API responses, story searches, and analytics data are cached with configurable TTL
+- **Smart Cache Keys**: Hierarchical key structure for efficient invalidation and pattern matching
+- **Graceful Degradation**: System continues to operate normally when Redis is unavailable
+- **Cache Hit Optimization**: Frequently accessed data like trending stories and search results are prioritized
+
+### Cached Data Types
+- **Story Feeds**: Trending stories, search results, and story details with 5-30 minute TTL
+- **Analytics Data**: Bias distribution, coverage statistics, and overview metrics with 1-hour TTL  
+- **Source Information**: News source metadata and bias classifications with long-term caching
+- **Search Results**: Elasticsearch queries and article listings with medium-term TTL
+
+### Cache Configuration
+```typescript
+// Cache TTL Settings
+SHORT: 60s        // Frequently changing data
+MEDIUM: 300s      // Moderately changing data  
+LONG: 1800s       // Slowly changing data
+VERY_LONG: 3600s  // Rarely changing data
+```
+
+### Performance Benefits
+- **Response Time**: 80-95% faster API responses for cached data
+- **Database Load**: Significant reduction in MySQL and Elasticsearch queries
+- **Scalability**: Improved concurrent user handling and system throughput
+- **Development**: Optional caching allows for easy debugging and testing
+
+## AI-Powered Bias Analysis
 
 OpenBias uses advanced algorithms to detect bias patterns and ensure comprehensive coverage:
 
@@ -184,13 +202,12 @@ OpenBias monitors a carefully curated selection of news sources across the polit
 - Advanced analytics dashboard
 - International news source expansion
 
+-->
 ## Contributing
 
-OpenBias is open source and welcomes contributions! The codebase uses TypeScript throughout with comprehensive type safety, modern tooling, and a clean monorepo structure.
+Contributions are welcome.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT 
 
----
-**OpenBias**: Your open-source alternative to Ground News for comprehensive news bias analysis and multi-perspective coverage tracking.

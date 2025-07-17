@@ -38,7 +38,7 @@
             @keyup.enter="searchStories"
           />
           <button @click="searchStories" class="search-button">
-            <icon name="search" />
+            🔍
           </button>
         </div>
         
@@ -48,11 +48,12 @@
             <option value="6h">Last 6 Hours</option>
             <option value="24h">Last 24 Hours</option>
             <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
           </select>
           
           <select v-model="selectedCoverage" @change="loadStories(true)" class="filter-select">
-            <option value="">All Coverage</option>
-            <option value="full">Full Coverage</option>
+            <option value="all">All Stories (Including Ungrouped)</option>
+            <option value="full">Full Coverage (3 Perspectives)</option>
             <option value="partial">Partial Coverage</option>
             <option value="limited">Limited Coverage</option>
           </select>
@@ -167,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { useApi } from '@/composables/useApi'
 import StoryFeed from '@/components/StoryFeed.vue'
@@ -177,8 +178,8 @@ const { get, post } = useApi()
 
 // Reactive state
 const searchQuery = ref('')
-const selectedTimeframe = ref('24h')
-const selectedCoverage = ref('')
+const selectedTimeframe = ref('30d')
+const selectedCoverage = ref('all')
 const showFiltersModal = ref(false)
 const analyzingBatch = ref(false)
 
@@ -209,25 +210,45 @@ const loadStories = async (reset = true) => {
 }
 
 const searchStories = async () => {
-  // This will trigger StoryFeed to search
+  // The search will be triggered by the searchQuery reactive binding
+  // The StoryFeed component watches searchQuery and will automatically reload
+  console.log('Search triggered for:', searchQuery.value)
 }
 
 const loadStats = async () => {
   try {
-    const [storiesRes, analyticsRes] = await Promise.all([
-      get('/api/stories/trending?limit=1'),
-      get('/api/analytics/overview')
-    ])
+    const response = await get(`/api/analytics/overview?timeframe=${selectedTimeframe.value}`)
+    
+    if (response.error) {
+      console.error('API error:', response.error)
+      // Use fallback values if API fails
+      totalStories.value = 0
+      averageCoverage.value = 0
+      blindspotCount.value = 0
+    } else {
+      totalStories.value = response.totalStories || 0
+      averageCoverage.value = response.averageCoverage || 0
+      blindspotCount.value = response.blindspotCount || 0
+    }
 
-    // Mock stats for demo
-    totalStories.value = 245
-    averageCoverage.value = 73
-    blindspotCount.value = 12
-    pendingAnalysis.value = 8
-    processingAnalysis.value = 3
-    completedAnalysis.value = 234
+    // Also load analysis stats for authenticated users
+    if (isAuthenticated.value) {
+      try {
+        // This would be a separate endpoint for analysis job statistics
+        // For now, keep mock values
+        pendingAnalysis.value = 8
+        processingAnalysis.value = 3
+        completedAnalysis.value = 234
+      } catch (error) {
+        console.error('Failed to load analysis stats:', error)
+      }
+    }
   } catch (error) {
     console.error('Failed to load stats:', error)
+    // Use fallback values
+    totalStories.value = 0
+    averageCoverage.value = 0
+    blindspotCount.value = 0
   }
 }
 
@@ -264,6 +285,7 @@ const triggerBatchAnalysis = async () => {
 }
 
 const onStoryAnalyzed = (storyId: number) => {
+  console.log('Story analyzed:', storyId)
   // Update analysis counts
   processingAnalysis.value = Math.max(0, processingAnalysis.value - 1)
   completedAnalysis.value += 1
@@ -286,6 +308,11 @@ const applyFilters = () => {
   showFiltersModal.value = false
   loadStories(true)
 }
+
+// Watch for timeframe changes to reload stats
+watch(selectedTimeframe, () => {
+  loadStats()
+})
 
 // Load initial data
 onMounted(() => {

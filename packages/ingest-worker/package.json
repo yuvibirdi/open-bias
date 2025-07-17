@@ -1,7 +1,7 @@
 {
   "name": "@open-bias/ingest-worker",
-  "module": "index.ts",
-  "main": "./src/index.ts",
+  "module": "ingest.ts",
+  "main": "./src/ingest.ts",
   "type": "module",
   "private": true,
   "devDependencies": {
@@ -20,9 +20,9 @@
     "rss-parser": "^3.13.0"
   },
   "scripts": {
-    "dev": "bun --hot src/index.ts ingest",
-    "schedule": "bun src/index.ts schedule",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "dev": "bun --hot src/ingest.ts ingest",
+    "schedule": "bun src/ingest.ts schedule",
+    "build": "bun build src/ingest.ts --outdir dist --target bun",
     "lint": "bunx eslint ./src/"
   }
 }

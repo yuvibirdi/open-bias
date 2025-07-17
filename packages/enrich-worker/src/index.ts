@@ -52,8 +52,8 @@ async function main() {
   }
 
   // Step 2: Group similar articles with integrated bias analysis
-  console.log("🔗 Step 2: Article Grouping + Immediate Bias Analysis");
-  console.log(`🎯 Development Limit: ${DEV_ARTICLE_LIMIT === -1 ? 'ALL ARTICLES' : `${DEV_ARTICLE_LIMIT} articles`}`);
+  console.log(" Step 2: Article Grouping + Bias Analysis");
+  console.log(` Development Limit: ${DEV_ARTICLE_LIMIT === -1 ? 'ALL ARTICLES' : `${DEV_ARTICLE_LIMIT} articles`}`);
   if (aiTest.available) {
     console.log("✅ AI available - bias analysis will happen immediately after each group is formed");
   } else {

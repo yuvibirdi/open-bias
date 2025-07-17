@@ -5,8 +5,18 @@ import storiesApp from "./stories";
 import authApp from "./auth";
 import userApp from "./user";
 import notificationApp from "./notifications";
+import { redis, CacheKeys, CacheTTL } from "./redis";
 
 const app = new Hono();
+
+// Initialize Redis connection
+redis.connect().then((connected) => {
+  if (connected) {
+    console.log('Redis caching enabled for main API');
+  } else {
+    console.log('Redis unavailable, running without cache');
+  }
+});
 
 // Add CORS middleware
 app.use('*', cors({
@@ -57,23 +67,29 @@ app.get("/articles", async (c) => {
     const bias = c.req.query("bias");
     const limit = Number(c.req.query("limit") || 10);
 
-    const esQuery = bias ? {
-      match: { bias: Number(bias) }
-    } : { match_all: {} };
+    // Try to get from cache first
+    const cacheKey = CacheKeys.articles.list(bias ? Number(bias) : undefined, limit);
+    const cached = await redis.cache(cacheKey, async () => {
+      const esQuery = bias ? {
+        match: { bias: bias }
+      } : { match_all: {} };
 
-    const results = await searchElasticsearch(esQuery, limit);
+      const results = await searchElasticsearch(esQuery, limit);
 
-    const hits = results.hits.hits.map((hit: { _id: string; _source?: Record<string, unknown> }) => ({
-      id: hit._id,
-      title: hit._source?.title || "No title",
-      link: hit._source?.link || "#",
-      summary: hit._source?.summary || "",
-      published: hit._source?.published || new Date().toISOString(),
-      bias: hit._source?.bias || 0,
-      sourceName: hit._source?.sourceName || "Unknown"
-    }));
+      const hits = results.hits.hits.map((hit: { _id: string; _source?: Record<string, unknown> }) => ({
+        id: hit._id,
+        title: hit._source?.title || "No title",
+        link: hit._source?.link || "#",
+        summary: hit._source?.summary || "",
+        published: hit._source?.published || new Date().toISOString(),
+        bias: hit._source?.bias || 0,
+        sourceName: hit._source?.sourceName || "Unknown"
+      }));
 
-    return c.json({ articles: hits });
+      return { articles: hits };
+    }, CacheTTL.MEDIUM);
+
+    return c.json(cached);
   } catch (error) {
     console.error("Elasticsearch error:", error);
     return c.json({ articles: [] });
@@ -84,19 +100,24 @@ app.get("/sources", async (c) => {
   try {
     console.log("Fetching sources from MySQL database...");
     
-    // Get sources directly from MySQL database
-    const sources = await db.select({
-      id: dbSources.id,
-      name: dbSources.name,
-      rss: dbSources.rss,
-      bias: dbSources.bias,
-      url: dbSources.url,
-      fetchedAt: dbSources.fetchedAt
-    }).from(dbSources);
+    // Try to get from cache first
+    const cacheKey = CacheKeys.sources.all();
+    const cached = await redis.cache(cacheKey, async () => {
+      // Get sources directly from MySQL database
+      const sources = await db.select({
+        id: dbSources.id,
+        name: dbSources.name,
+        rss: dbSources.rss,
+        bias: dbSources.bias,
+        url: dbSources.url,
+        fetchedAt: dbSources.fetchedAt
+      }).from(dbSources);
 
-    console.log(`Found ${sources.length} sources in database`);
+      console.log(`Found ${sources.length} sources in database`);
+      return { sources };
+    }, CacheTTL.LONG);
 
-    return c.json({ sources });
+    return c.json(cached);
   } catch (error) {
     console.error("Sources endpoint error:", error);
     return c.json({ 

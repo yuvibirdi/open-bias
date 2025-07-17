@@ -124,6 +124,35 @@
             <div class="text-center mb-8">
               <h2 class="text-2xl font-bold text-gray-900 mb-2">Sources</h2>
               <p class="text-gray-600 font-medium">{{ story.sources?.length || 0 }} articles from multiple outlets</p>
+              
+              <!-- Bias Distribution Bar -->
+              <div v-if="story.biasDistribution" class="mt-6 max-w-2xl mx-auto">
+                <div class="bias-distribution">
+                  <div class="bias-bar">
+                    <div 
+                      class="bias-segment left" 
+                      :style="{ width: getBiasPercentage('left') + '%' }"
+                      :title="`${story.biasDistribution.left || 0} left-leaning sources`"
+                    ></div>
+                    <div 
+                      class="bias-segment center" 
+                      :style="{ width: getBiasPercentage('center') + '%' }"
+                      :title="`${story.biasDistribution.center || 0} center sources`"
+                    ></div>
+                    <div 
+                      class="bias-segment right" 
+                      :style="{ width: getBiasPercentage('right') + '%' }"
+                      :title="`${story.biasDistribution.right || 0} right-leaning sources`"
+                    ></div>
+                  </div>
+                </div>
+                
+                <div class="coverage-labels mt-3">
+                  <span class="left-label">{{ story.biasDistribution.left || 0 }} Left</span>
+                  <span class="center-label">{{ story.biasDistribution.center || 0 }} Center</span>
+                  <span class="right-label">{{ story.biasDistribution.right || 0 }} Right</span>
+                </div>
+              </div>
             </div>
             
             <div v-if="story.sources && story.sources.length > 0" class="max-w-4xl mx-auto space-y-6">
@@ -162,7 +191,7 @@
                     :href="source.url" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    class="ml-6 px-6 py-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors flex-shrink-0"
+                    class="ml-6 px-6 py-3 text-sm font-large text-black bg-blue-600 rounded hover:bg-blue-700 transition-colors flex-shrink-0"
                   >
                     Read Article →
                   </a>
@@ -211,6 +240,11 @@ interface Story {
   lastUpdated?: string
   sources: Source[]
   coverageScore?: number
+  biasDistribution?: {
+    left: number
+    center: number
+    right: number
+  }
 }
 
 const route = useRoute()
@@ -239,6 +273,33 @@ const loadStory = async () => {
     const response = await get(`/api/stories/${storyId.value}`) as any
     
     if (response.story && response.articles) {
+      // Calculate bias distribution from sources
+      const sources = response.articles.map((article: any) => ({
+        id: article.id.toString(),
+        name: article.sourceName,
+        url: article.link,
+        title: article.title,
+        excerpt: article.summary,
+        summary: article.summary,
+        publishedAt: article.published,
+        biasScore: parseFloat(article.politicalLeaning) || 0,
+        bias: article.sourceBias,
+        imageUrl: article.imageUrl,
+      }))
+
+      // Calculate bias distribution
+      const biasDistribution = sources.reduce((acc: any, source: any) => {
+        const score = source.biasScore
+        if (score > 0.5) {
+          acc.right = (acc.right || 0) + 1
+        } else if (score < -0.5) {
+          acc.left = (acc.left || 0) + 1
+        } else {
+          acc.center = (acc.center || 0) + 1
+        }
+        return acc
+      }, { left: 0, center: 0, right: 0 })
+
       // Transform API response to match component expectations
       story.value = {
         id: response.story.id.toString(),
@@ -250,18 +311,8 @@ const loadStory = async () => {
         publishedAt: response.articles[0]?.published || new Date().toISOString(),
         lastUpdated: response.story.lastUpdated,
         coverageScore: response.coverageScore,
-        sources: response.articles.map((article: any) => ({
-          id: article.id.toString(),
-          name: article.sourceName,
-          url: article.link,
-          title: article.title,
-          excerpt: article.summary,
-          summary: article.summary,
-          publishedAt: article.published,
-          biasScore: parseFloat(article.politicalLeaning) || 0,
-          bias: article.sourceBias,
-          imageUrl: article.imageUrl,
-        })),
+        biasDistribution,
+        sources,
       }
     } else {
       error.value = 'Story not found'
@@ -351,6 +402,18 @@ const getBiasChipClasses = (score: number) => {
   return 'bg-gray-50 text-gray-700 border border-gray-200'
 }
 
+const getBiasPercentage = (biasType: 'left' | 'center' | 'right') => {
+  if (!story.value?.biasDistribution) return 0
+  
+  const distribution = story.value.biasDistribution
+  const total = (distribution.left || 0) + (distribution.center || 0) + (distribution.right || 0)
+  
+  if (total === 0) return 0
+  
+  const count = distribution[biasType] || 0
+  return Math.round((count / total) * 100)
+}
+
 const getHeroImage = () => {
   if (!story.value?.sources || imageError.value) return null
   const sourceWithImage = story.value.sources.find(source => 
@@ -380,5 +443,57 @@ button:focus-visible,
 a:focus-visible {
   outline: 2px solid rgb(59 130 246);
   outline-offset: 2px;
+}
+
+/* Bias Distribution Bar Styles */
+.bias-distribution {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.bias-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+
+.bias-segment {
+  transition: all 0.3s ease;
+}
+
+.bias-segment.left {
+  background-color: #3b82f6;
+}
+
+.bias-segment.center {
+  background-color: #6b7280;
+}
+
+.bias-segment.right {
+  background-color: #ef4444;
+}
+
+.coverage-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 8px;
+}
+
+.left-label {
+  color: #3b82f6;
+}
+
+.center-label {
+  color: #6b7280;
+}
+
+.right-label {
+  color: #ef4444;
 }
 </style>
