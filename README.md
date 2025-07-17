@@ -5,7 +5,7 @@ OpenBias is a comprehensive news bias analysis platform inspired by Ground News.
 - **AI-Powered Bias Analysis**: Multiple AI provider support for automated bias detection and sentiment analysis
 - **Multi-Perspective Coverage**: Track left/center/right source distribution with visual bias indicators
 - **Blindspot Detection**: Automated alerts for missing political perspectives in your news consumption
-- **Advanced Story Grouping**: Multi-algorithm similarity matching using TF-IDF, Levenshtein distance, and semantic analysis using embeddings and consine similarity.
+- **Advanced Story Grouping**: Multi-algorithm similarity matching using TF-IDF, Levenshtein distance, and semantic analysis using embeddings and consine similarity
 - **40+ News Sources**: Continuous ingestion from diverse outlets across the political spectrum
 - **User Authentication**: Personalized experiences with JWT-based security
 - **Modern UI**: Responsive Vue.js interface with real-time updates and CoreUI components
@@ -49,7 +49,7 @@ graph TD
 
 ### Core Components
 - **`ingest-worker`**: Monitors 40+ RSS feeds, performs intelligent story grouping with quality controls, and maintains source diversity
-- **`enrich-worker`**: AI-powered bias analysis using multiple providers, sentiment detection, and Elasticsearch indexing.
+- **`enrich-worker`**: AI-powered bias analysis using multiple providers, sentiment detection, and Elasticsearch indexing
 - **`api`**: Hono-based REST API with JWT authentication, story endpoints, and user management with Redis caching for performance optimization
 - **`admin-ui`**: Vue 3 + TypeScript dashboard with CoreUI components, bias visualization, and user authentication and real-time story feeds with an admin dashboard
 - **`db`**: MySQL for persistent storage, Elasticsearch for advanced search and analytics, Redis for API response caching
@@ -116,8 +116,7 @@ For faster development, edit processing limits in `packages/enrich-worker/src/in
 const DEV_ARTICLE_LIMIT: number = 20;     // Articles to process (20 = quick testing)
 const DEV_GROUP_ANALYSIS_LIMIT: number = 5; // Groups to analyze (5 = quick testing)
 ```
-
-**Tip**: Use `-1` for both values in production to process all content.
+ Use `-1` for both values in production to process all content.
 
 <!--
 ## Redis Caching System
