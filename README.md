@@ -91,7 +91,7 @@ cp .env.example .env
 ### 2. Initialize Database
 
 ```bash
-# Complete database setup with sources and sample data
+# Complete database setup with sources and ingest and enrich data.
 bun db:setup
 ```
 
@@ -110,13 +110,13 @@ bun --filter ./packages/enrich-worker run dev # AI analysis
 
 ### 4. Development Configuration
 
-For faster development, processing limits for the grouping pipline `packages/enrich-worker/src/index.ts` are set to:
-
+For faster development, processing limits for the grouping pipline are set:
+`packages/enrich-worker/src/index.ts`
 ```typescript
 const DEV_ARTICLE_LIMIT: number = 20;     // Articles to process (20 = quick testing)
 const DEV_GROUP_ANALYSIS_LIMIT: number = 5; // Groups to analyze (5 = quick testing)
 ```
- Use `-1` for both values in production to process all content.
+ Use `-1` for both values in prod to process all content.
 
 <!--
 ## Redis Caching System
